@@ -1,0 +1,86 @@
+{
+  "project_info": {
+    "project_number": "637970082188",
+    "project_id": "naco-d2738",
+    "storage_bucket": "naco-d2738.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:637970082188:android:32cf9b7ee752e85d444ea9",
+        "android_client_info": {
+          "package_name": "com.example.artisan_marketplace"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCb2BvS6Afzkg418J5xMNfaGQIVPICgx7Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:637970082188:android:5826df17b039c5a3444ea9",
+        "android_client_info": {
+          "package_name": "com.example.artisan_marketplace_new"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCb2BvS6Afzkg418J5xMNfaGQIVPICgx7Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:637970082188:android:09151c53b920c9ad444ea9",
+        "android_client_info": {
+          "package_name": "com.example.artisan_marketplace_new.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCb2BvS6Afzkg418J5xMNfaGQIVPICgx7Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:637970082188:android:e891ee17c52a9246444ea9",
+        "android_client_info": {
+          "package_name": "com.example.artisan_marketplace_new.prod"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCb2BvS6Afzkg418J5xMNfaGQIVPICgx7Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
