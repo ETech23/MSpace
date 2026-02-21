@@ -349,6 +349,22 @@ void _listenToTokenRefresh(String userId) {
     print('🔔 Starting notification listener for user: $userId');
     _notificationListener.startListening(userId);
   }
+
+  Future<bool> requestAccountDeletion({required String reason}) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await authRepository.requestAccountDeletion(reason: reason);
+      _notificationListener.stopListening();
+      state = AuthState(isInitialized: true);
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Failed to process account deletion request.',
+      );
+      return false;
+    }
+  }
 }
 
 // Auth provider

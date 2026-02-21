@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/error/exceptions.dart'hide AuthException;
+import '../../../../core/error/exceptions.dart';
 import '../models/user_model.dart';
 
 import '../../../../core/services/location_helper.dart';
@@ -47,6 +47,7 @@ abstract class AuthRemoteDataSource {
 
   Future<void> updateUserType(String userId, String newType);
   Future<void> createArtisanProfileIfNeeded(String userId);
+  Future<void> requestAccountDeletion({required String reason});
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
@@ -544,6 +545,51 @@ Future<void> createArtisanProfileIfNeeded(String userId) async {
   } catch (e) {
     print('❌ Error creating artisan profile: $e');
     throw ServerException(message: 'Failed to create artisan profile: ${e.toString()}');
+  }
+}
+
+@override
+Future<void> requestAccountDeletion({required String reason}) async {
+  try {
+    final user = client.auth.currentUser;
+    if (user == null) {
+      throw const ServerException(message: 'No authenticated user found.');
+    }
+
+    // Preferred path: backend function can hard-delete auth user and related data.
+    try {
+      final response = await client.functions.invoke(
+        'delete-account',
+        body: {
+          'reason': reason,
+        },
+      );
+
+      if (response.status >= 200 && response.status < 300) {
+        await client.auth.signOut();
+        return;
+      }
+    } catch (_) {
+      // Fall back to request queue below if edge function is not deployed.
+    }
+
+    // Fallback path: queue deletion request for backend processing.
+    await client.from('account_deletion_requests').upsert({
+      'user_id': user.id,
+      'reason': reason,
+      'status': 'pending',
+      'requested_at': DateTime.now().toIso8601String(),
+    }, onConflict: 'user_id');
+
+    await client.auth.signOut();
+  } on PostgrestException catch (e) {
+    throw ServerException(message: e.message);
+  } on AuthException catch (e) {
+    throw ServerException(message: e.message);
+  } catch (e) {
+    throw ServerException(
+      message: 'Failed to process account deletion request: ${e.toString()}',
+    );
   }
 }
 }

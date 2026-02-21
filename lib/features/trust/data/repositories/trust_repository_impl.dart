@@ -9,6 +9,7 @@ import '../../../../core/error/failures.dart';
 import '../../domain/entities/identity_verification_entity.dart';
 import '../../domain/entities/dispute_entity.dart';
 import '../../domain/entities/report_entity.dart';
+import '../../domain/entities/blocked_user_entity.dart';
 import '../../domain/repositories/trust_repository.dart';
 import '../models/identity_verification_model.dart';
 import '../models/dispute_model.dart';
@@ -519,6 +520,103 @@ class TrustRepositoryImpl implements TrustRepository {
       }).eq('id', reportId);
 
       return const Right(null);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  // ---------------------------
+  // User blocking
+  // ---------------------------
+  @override
+  Future<Either<Failure, void>> blockUser({
+    required String blockerId,
+    required String blockedUserId,
+    String? reason,
+  }) async {
+    try {
+      if (blockerId == blockedUserId) {
+        return Left(ServerFailure(message: 'You cannot block yourself.'));
+      }
+
+      await supabaseClient.from('user_blocks').upsert({
+        'blocker_id': blockerId,
+        'blocked_user_id': blockedUserId,
+        'reason': reason,
+        'created_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'blocker_id,blocked_user_id');
+
+      return const Right(null);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> unblockUser({
+    required String blockerId,
+    required String blockedUserId,
+  }) async {
+    try {
+      await supabaseClient
+          .from('user_blocks')
+          .delete()
+          .eq('blocker_id', blockerId)
+          .eq('blocked_user_id', blockedUserId);
+      return const Right(null);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, List<BlockedUserEntity>>> getBlockedUsers({
+    required String blockerId,
+  }) async {
+    try {
+      final rows = await supabaseClient
+          .from('user_blocks')
+          .select('blocked_user_id,reason,created_at')
+          .eq('blocker_id', blockerId)
+          .order('created_at', ascending: false);
+
+      final blockRows = (rows as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+
+      if (blockRows.isEmpty) {
+        return const Right([]);
+      }
+
+      final blockedIds = blockRows
+          .map((e) => e['blocked_user_id'] as String)
+          .toList(growable: false);
+
+      final users = await supabaseClient
+          .from('users')
+          .select('id,name,photo_url')
+          .inFilter('id', blockedIds);
+
+      final byId = <String, Map<String, dynamic>>{};
+      for (final item in (users as List)) {
+        final userMap = Map<String, dynamic>.from(item as Map);
+        byId[userMap['id'] as String] = userMap;
+      }
+
+      final blocked = blockRows.map((row) {
+        final blockedId = row['blocked_user_id'] as String;
+        final profile = byId[blockedId];
+        return BlockedUserEntity(
+          blockedUserId: blockedId,
+          name: profile?['name'] as String?,
+          photoUrl: profile?['photo_url'] as String?,
+          reason: row['reason'] as String?,
+          blockedAt: DateTime.tryParse(row['created_at'] as String? ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0),
+        );
+      }).toList(growable: false);
+
+      return Right(blocked);
     } catch (e) {
       return Left(ServerFailure(message: e.toString()));
     }

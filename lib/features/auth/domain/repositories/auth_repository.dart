@@ -34,4 +34,5 @@ abstract class AuthRepository {
 
   Future<void> updateUserType(String userId, String newType);
   Future<void> createArtisanProfileIfNeeded(String userId);
+  Future<void> requestAccountDeletion({required String reason});
 }

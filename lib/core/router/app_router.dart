@@ -40,6 +40,7 @@ import '../../features/trust/presentation/screens/report_form_screen.dart';
 import '../../features/trust/presentation/screens/admin_identity_reviews_screen.dart';
 import '../../features/trust/presentation/screens/admin_disputes_screen.dart';
 import '../../features/trust/presentation/screens/admin_reports_screen.dart';
+import '../../features/trust/presentation/screens/blocked_users_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = 
     GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -153,6 +154,11 @@ GoRoute(
         path: '/profile/privacy',
         name: 'profile-privacy',
         builder: (context, state) => const PrivacySettingsScreen(),
+      ),
+      GoRoute(
+        path: '/profile/blocked',
+        name: 'profile-blocked',
+        builder: (context, state) => const BlockedUsersScreen(),
       ),
       GoRoute(
         path: '/profile/saved',

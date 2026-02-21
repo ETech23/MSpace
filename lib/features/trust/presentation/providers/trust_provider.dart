@@ -5,6 +5,7 @@ import '../../../../core/di/injection_container.dart';
 import '../../domain/entities/identity_verification_entity.dart';
 import '../../domain/entities/dispute_entity.dart';
 import '../../domain/entities/report_entity.dart';
+import '../../domain/entities/blocked_user_entity.dart';
 import '../../domain/repositories/trust_repository.dart';
 
 final trustRepositoryProvider = Provider<TrustRepository>((ref) {
@@ -285,3 +286,71 @@ final adminReportsProvider = FutureProvider<List<ReportEntity>>((ref) async {
     (items) => items,
   );
 });
+
+// ---------------------------
+// Blocked Users
+// ---------------------------
+final blockedUsersProvider =
+    FutureProvider.family<List<BlockedUserEntity>, String>((ref, userId) async {
+  final repository = ref.watch(trustRepositoryProvider);
+  final result = await repository.getBlockedUsers(blockerId: userId);
+  return result.fold(
+    (failure) => throw Exception(failure.message),
+    (items) => items,
+  );
+});
+
+class BlockActionNotifier extends StateNotifier<AsyncValue<void>> {
+  final TrustRepository repository;
+
+  BlockActionNotifier({required this.repository}) : super(const AsyncData(null));
+
+  Future<bool> blockUser({
+    required String blockerId,
+    required String blockedUserId,
+    String? reason,
+  }) async {
+    state = const AsyncLoading();
+    final result = await repository.blockUser(
+      blockerId: blockerId,
+      blockedUserId: blockedUserId,
+      reason: reason,
+    );
+    return result.fold(
+      (failure) {
+        state = AsyncError(failure.message, StackTrace.current);
+        return false;
+      },
+      (_) {
+        state = const AsyncData(null);
+        return true;
+      },
+    );
+  }
+
+  Future<bool> unblockUser({
+    required String blockerId,
+    required String blockedUserId,
+  }) async {
+    state = const AsyncLoading();
+    final result = await repository.unblockUser(
+      blockerId: blockerId,
+      blockedUserId: blockedUserId,
+    );
+    return result.fold(
+      (failure) {
+        state = AsyncError(failure.message, StackTrace.current);
+        return false;
+      },
+      (_) {
+        state = const AsyncData(null);
+        return true;
+      },
+    );
+  }
+}
+
+final blockActionProvider =
+    StateNotifierProvider<BlockActionNotifier, AsyncValue<void>>(
+  (ref) => BlockActionNotifier(repository: ref.watch(trustRepositoryProvider)),
+);

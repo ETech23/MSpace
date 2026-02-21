@@ -5,9 +5,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:artisan_marketplace/core/providers/theme_provider.dart';
 import 'package:artisan_marketplace/core/ads/ad_widgets.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
+
+  static const String _privacyPolicyUrl = String.fromEnvironment(
+    'PRIVACY_POLICY_URL',
+    defaultValue: 'https://etech23.github.io/MSpace/privacy-policy.html',
+  );
+  static const String _termsUrl = String.fromEnvironment(
+    'TERMS_OF_SERVICE_URL',
+    defaultValue: 'https://etech23.github.io/MSpace/terms-of-service.html',
+  );
+  static const String _communityGuidelinesUrl = String.fromEnvironment(
+    'COMMUNITY_GUIDELINES_URL',
+    defaultValue: 'https://etech23.github.io/MSpace/community-guidelines.html',
+  );
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -102,11 +117,7 @@ class SettingsScreen extends ConsumerWidget {
                 title: 'Blocked Users',
                 subtitle: 'Manage blocked accounts',
                 iconColor: Colors.orange,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Blocked users coming soon!')),
-                  );
-                },
+                onTap: () => context.push('/profile/blocked'),
               ),
             ],
           ),
@@ -159,11 +170,7 @@ class SettingsScreen extends ConsumerWidget {
                 title: 'Terms of Service',
                 subtitle: 'Read our terms',
                 iconColor: Colors.blueGrey,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Terms coming soon!')),
-                  );
-                },
+                onTap: () => _openExternalLink(context, _termsUrl),
               ),
               const Divider(height: 1, indent: 72),
               _buildSettingTile(
@@ -172,11 +179,16 @@ class SettingsScreen extends ConsumerWidget {
                 title: 'Privacy Policy',
                 subtitle: 'How we protect your data',
                 iconColor: Colors.green,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Privacy policy coming soon!')),
-                  );
-                },
+                onTap: () => _openExternalLink(context, _privacyPolicyUrl),
+              ),
+              const Divider(height: 1, indent: 72),
+              _buildSettingTile(
+                context: context,
+                icon: Icons.gpp_good_outlined,
+                title: 'Community Guidelines',
+                subtitle: 'Safety and chat rules',
+                iconColor: Colors.deepPurple,
+                onTap: () => _openExternalLink(context, _communityGuidelinesUrl),
               ),
               const Divider(height: 1, indent: 72),
               _buildSettingTile(
@@ -385,7 +397,6 @@ class SettingsScreen extends ConsumerWidget {
       case ThemeMode.dark:
         return 'Dark';
       case ThemeMode.system:
-      default:
         return 'System default';
     }
   }
@@ -494,35 +505,86 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showDeleteAccountDialog(BuildContext context) {
+    final reasonController = TextEditingController();
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Account'),
-        icon: Icon(Icons.warning_amber, size: 48, color: Theme.of(context).colorScheme.error),
-        content: const Text(
-          'This action is permanent and cannot be undone. All your data, bookings, and reviews will be permanently deleted.',
+        icon: Icon(
+          Icons.warning_amber,
+          size: 48,
+          color: Theme.of(dialogContext).colorScheme.error,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'This will permanently delete your account. Enter a reason to continue.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Reason',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Account deletion coming soon. Please contact support.'),
+            onPressed: () async {
+              final reason = reasonController.text.trim();
+              if (reason.isEmpty) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('Please provide a reason.')),
+                );
+                return;
+              }
+
+              final container = ProviderScope.containerOf(dialogContext);
+              final ok = await container
+                  .read(authProvider.notifier)
+                  .requestAccountDeletion(reason: reason);
+              if (!dialogContext.mounted) return;
+
+              Navigator.pop(dialogContext);
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    ok
+                        ? 'Account deletion requested. You have been signed out.'
+                        : 'Unable to process deletion request. Try again.',
+                  ),
                 ),
               );
+              if (ok && dialogContext.mounted) {
+                dialogContext.go('/login');
+              }
             },
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
             ),
             child: const Text('Delete Account'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openExternalLink(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open: $url')),
+      );
+    }
   }
 }

@@ -126,4 +126,13 @@ class AuthRepositoryImpl implements AuthRepository {
       throw ServerFailure(message: e.message);
     }
   }
+
+  @override
+  Future<void> requestAccountDeletion({required String reason}) async {
+    try {
+      return await remoteDataSource.requestAccountDeletion(reason: reason);
+    } on ServerException catch (e) {
+      throw ServerFailure(message: e.message);
+    }
+  }
 }

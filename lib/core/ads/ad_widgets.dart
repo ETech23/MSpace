@@ -23,7 +23,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   @override
   void initState() {
     super.initState();
-    if (_shouldLoadAds) {
+    if (_shouldLoadAds && AdHelper.bannerAdUnitId.isNotEmpty) {
       _bannerAd = BannerAd(
         size: AdSize.banner,
         adUnitId: AdHelper.bannerAdUnitId,
@@ -88,7 +88,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
   @override
   void initState() {
     super.initState();
-    if (_shouldLoadNative) {
+    if (_shouldLoadNative && AdHelper.nativeAdUnitId.isNotEmpty) {
       _nativeAd = NativeAd(
         adUnitId: AdHelper.nativeAdUnitId,
         factoryId: 'listTile',

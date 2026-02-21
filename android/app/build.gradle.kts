@@ -35,11 +35,15 @@ android {
             dimension = "env"
             applicationIdSuffix = ".dev"
             resValue("string", "app_name", "MSpace")
+            resValue("string", "admob_app_id", "ca-app-pub-3940256099942544~3347511713")
         }
 
         create("prod") {
             dimension = "env"
             resValue("string", "app_name", "MSpace")
+            val admobAppId = System.getenv("ADMOB_APP_ID_ANDROID")
+                ?: "ca-app-pub-0000000000000000~0000000000"
+            resValue("string", "admob_app_id", admobAppId)
         }
     }
 

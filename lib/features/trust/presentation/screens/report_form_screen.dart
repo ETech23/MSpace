@@ -24,6 +24,7 @@ class ReportFormScreen extends ConsumerStatefulWidget {
 class _ReportFormScreenState extends ConsumerState<ReportFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _reasonController = TextEditingController();
+  bool _alsoBlockUser = false;
 
   @override
   void dispose() {
@@ -43,9 +44,26 @@ class _ReportFormScreenState extends ConsumerState<ReportFormScreen> {
           reason: _reasonController.text.trim(),
         );
 
+    if (ok &&
+        _alsoBlockUser &&
+        widget.targetType == 'user' &&
+        widget.targetId.isNotEmpty) {
+      await ref.read(blockActionProvider.notifier).blockUser(
+            blockerId: user.id,
+            blockedUserId: widget.targetId,
+            reason: _reasonController.text.trim(),
+          );
+    }
+
     if (ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Report submitted')),
+        SnackBar(
+          content: Text(
+            _alsoBlockUser && widget.targetType == 'user'
+                ? 'Report submitted and user blocked'
+                : 'Report submitted',
+          ),
+        ),
       );
       Navigator.pop(context);
     }
@@ -95,6 +113,22 @@ class _ReportFormScreenState extends ConsumerState<ReportFormScreen> {
                 },
               ),
             ),
+            if (widget.targetType == 'user') ...[
+              const SizedBox(height: 12),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _alsoBlockUser,
+                onChanged: (value) {
+                  setState(() {
+                    _alsoBlockUser = value ?? false;
+                  });
+                },
+                title: const Text('Also block this user'),
+                subtitle: const Text(
+                  'You can unblock them later from Settings.',
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,

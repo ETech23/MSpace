@@ -46,3 +46,6 @@ app.*.map.json
 firebase-service-account.json
 *.pem
 *.key
+.env
+.env.*
+!.env.example

@@ -5,6 +5,7 @@ import '../../../../core/error/failures.dart';
 import '../entities/identity_verification_entity.dart';
 import '../entities/dispute_entity.dart';
 import '../entities/report_entity.dart';
+import '../entities/blocked_user_entity.dart';
 
 abstract class TrustRepository {
   // Identity verification
@@ -60,5 +61,19 @@ abstract class TrustRepository {
     required String reportId,
     required String status,
     String? actionTaken,
+  });
+
+  // User blocking
+  Future<Either<Failure, void>> blockUser({
+    required String blockerId,
+    required String blockedUserId,
+    String? reason,
+  });
+  Future<Either<Failure, void>> unblockUser({
+    required String blockerId,
+    required String blockedUserId,
+  });
+  Future<Either<Failure, List<BlockedUserEntity>>> getBlockedUsers({
+    required String blockerId,
   });
 }
