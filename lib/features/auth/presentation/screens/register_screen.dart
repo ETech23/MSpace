@@ -17,9 +17,31 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _phoneController = TextEditingController();
-  String _selectedRole = 'client';
+  String _selectedRole = 'customer';
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your password';
+    }
+    if (value.length < 8) {
+      return 'Password must be at least 8 characters';
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(value)) {
+      return 'Password must include an uppercase letter';
+    }
+    if (!RegExp(r'[a-z]').hasMatch(value)) {
+      return 'Password must include a lowercase letter';
+    }
+    if (!RegExp(r'[0-9]').hasMatch(value)) {
+      return 'Password must include a number';
+    }
+    if (!RegExp(r'[^A-Za-z0-9]').hasMatch(value)) {
+      return 'Password must include a symbol';
+    }
+    return null;
+  }
 
   @override
   void dispose() {
@@ -34,8 +56,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
-    await ref.read(authProvider.notifier).register(
-      email: _emailController.text.trim(),
+    final email = _emailController.text.trim();
+
+    // register() returns true on success, false on failure.
+    final success = await ref.read(authProvider.notifier).register(
+      email: email,
       password: _passwordController.text,
       name: _nameController.text.trim(),
       phone: _phoneController.text.trim(),
@@ -44,56 +69,112 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     if (mounted) {
       final authState = ref.read(authProvider);
-      
-      if (authState.isAuthenticated && authState.user != null) {
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 12),
-                Text('Account created! Welcome, ${authState.user!.name}!'),
-              ],
-            ),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        
-        // Redirect to location capture for artisans (critical for visibility)
-        // Clients can also set location for better recommendations
-        final bool isArtisan = _selectedRole == 'artisan';
-        
-        // Navigate to location setup
+
+      if (success) {
+        // Registration succeeded — send user to confirm their email.
         context.go(
-          '/location-setup?userId=${authState.user!.id}&isArtisan=$isArtisan',
+          '/confirm-email?email=${Uri.encodeComponent(email)}',
         );
-        
-      } else if (authState.error != null) {
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text(authState.error!)),
-              ],
+      } else {
+        final error = authState.error!;
+        final isAlreadyRegistered = error.toLowerCase().contains('already exists') ||
+            error.toLowerCase().contains('already registered');
+
+        if (isAlreadyRegistered && mounted) {
+          // Email exists — it might just be unconfirmed.
+          // Offer to resend the confirmation link instead of a dead-end error.
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                "This email is already registered. If you haven't confirmed it yet, tap Resend.",
+              ),
+              backgroundColor: Colors.orange.shade700,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              action: SnackBarAction(
+                label: 'Resend',
+                textColor: Colors.white,
+                onPressed: () {
+                  context.go(
+                    '/confirm-email?email=${Uri.encodeComponent(email)}',
+                  );
+                },
+              ),
             ),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(error)),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              duration: const Duration(seconds: 5),
             ),
-            duration: const Duration(seconds: 5),
-          ),
-        );
+          );
+        }
       }
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    await ref.read(authProvider.notifier).loginWithGoogle();
+
+    if (!mounted) return;
+
+    final authState = ref.read(authProvider);
+
+    if (authState.isAuthenticated && authState.user != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Text('Welcome, ${authState.user!.name}!'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      // Google sign-in doesn't require email confirmation — go to location setup.
+      context.go(
+          '/location-setup?userId=${authState.user!.id}&isArtisan=false');
+    } else if (authState.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text(authState.error!)),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
     }
   }
 
@@ -119,7 +200,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 20),
-                
+
                 Text(
                   'Join MSpace',
                   style: theme.textTheme.headlineMedium?.copyWith(
@@ -128,8 +209,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
-                
-                // Name field
+
+                // ── Name ────────────────────────────────────────────────
                 TextFormField(
                   controller: _nameController,
                   decoration: const InputDecoration(
@@ -144,8 +225,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                
-                // Email field
+
+                // ── Email ────────────────────────────────────────────────
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -165,7 +246,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Phone number field
+                // ── Phone ────────────────────────────────────────────────
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
@@ -184,40 +265,31 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                
-                // Password field
+
+                // ── Password ─────────────────────────────────────────────
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   decoration: InputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outlined),
+                    helperText:
+                        'At least 8 chars, upper/lowercase, number, symbol',
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscurePassword
                             ? Icons.visibility_outlined
                             : Icons.visibility_off_outlined,
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
+                      onPressed: () => setState(
+                          () => _obscurePassword = !_obscurePassword),
                     ),
                   ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter your password';
-                    }
-                    if (value.length < 6) {
-                      return 'Password must be at least 6 characters';
-                    }
-                    return null;
-                  },
+                  validator: _validatePassword,
                 ),
                 const SizedBox(height: 16),
-                
-                // Confirm Password field
+
+                // ── Confirm password ─────────────────────────────────────
                 TextFormField(
                   controller: _confirmPasswordController,
                   obscureText: _obscureConfirmPassword,
@@ -230,11 +302,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             ? Icons.visibility_outlined
                             : Icons.visibility_off_outlined,
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscureConfirmPassword = !_obscureConfirmPassword;
-                        });
-                      },
+                      onPressed: () => setState(() =>
+                          _obscureConfirmPassword = !_obscureConfirmPassword),
                     ),
                   ),
                   validator: (value) {
@@ -248,8 +317,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   },
                 ),
                 const SizedBox(height: 24),
-                
-                // Role selection
+
+                // ── Role selection ───────────────────────────────────────
                 Text(
                   'I am a:',
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -257,24 +326,21 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 Row(
                   children: [
                     Expanded(
                       child: RadioListTile<String>(
-                        title: const Text('Client'),
+                        title: const Text('Customer'),
                         subtitle: const Text('Looking for services'),
-                        value: 'client',
+                        value: 'customer',
                         groupValue: _selectedRole,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedRole = value!;
-                          });
-                        },
+                        onChanged: (value) =>
+                            setState(() => _selectedRole = value!),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                           side: BorderSide(
-                            color: _selectedRole == 'client'
+                            color: _selectedRole == 'customer'
                                 ? theme.colorScheme.primary
                                 : Colors.grey,
                           ),
@@ -288,11 +354,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         subtitle: const Text('Offering services'),
                         value: 'artisan',
                         groupValue: _selectedRole,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedRole = value!;
-                          });
-                        },
+                        onChanged: (value) =>
+                            setState(() => _selectedRole = value!),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                           side: BorderSide(
@@ -306,8 +369,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ],
                 ),
                 const SizedBox(height: 24),
-                
-                // Register button
+
+                // ── Google sign-in ───────────────────────────────────────
+                OutlinedButton.icon(
+                  onPressed:
+                      authState.isLoading ? null : _handleGoogleSignIn,
+                  icon: const Icon(Icons.g_mobiledata, size: 20),
+                  label: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12.0),
+                    child: Text('Continue with Google'),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Register button ──────────────────────────────────────
                 FilledButton(
                   onPressed: authState.isLoading ? null : _handleRegister,
                   child: Padding(
@@ -316,14 +391,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         ? const SizedBox(
                             height: 20,
                             width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2),
                           )
                         : const Text('Create Account'),
                   ),
                 ),
                 const SizedBox(height: 16),
-                
-                // Login link
+
+                // ── Login link ───────────────────────────────────────────
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

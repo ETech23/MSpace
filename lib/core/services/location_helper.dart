@@ -1,134 +1,120 @@
 import 'dart:async';
-import 'package:geolocator/geolocator.dart';
+
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LocationHelper {
-  /// Get current position with fallback strategies
+  static const String _kHasRequestedLocationPermissionKey =
+      'has_requested_location_permission';
+
+  /// Get current position with fallback strategies.
+  /// This method never triggers the OS permission dialog.
   static Future<Position?> getCurrentPosition() async {
     try {
-      // Check if location services are enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        print('⚠️ Location services are disabled');
-        return await _getLastKnownPosition();
+        return _getLastKnownPosition();
       }
 
-      // Check and request permissions
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          print('⚠️ Location permissions denied');
-          return await _getLastKnownPosition();
-        }
-      }
-      
-      if (permission == LocationPermission.deniedForever) {
-        print('⚠️ Location permissions permanently denied');
-        return await _getLastKnownPosition();
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return _getLastKnownPosition();
       }
 
-      // Strategy 1: Try high accuracy with timeout
       try {
-        print('📍 Trying high accuracy GPS...');
         return await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high,
           timeLimit: const Duration(seconds: 15),
         ).timeout(const Duration(seconds: 15));
       } on TimeoutException {
-        print('⏰ High accuracy timeout');
+        // Fall through to medium accuracy.
       }
 
-      // Strategy 2: Try medium accuracy
       try {
-        print('📍 Trying medium accuracy GPS...');
         return await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.medium,
           timeLimit: const Duration(seconds: 10),
         ).timeout(const Duration(seconds: 10));
       } on TimeoutException {
-        print('⏰ Medium accuracy timeout');
+        // Fall through to last known position.
       }
 
-      // Strategy 3: Last known position
-      return await _getLastKnownPosition();
-      
-    } catch (e) {
-      print('❌ Location error: $e');
-      return await _getLastKnownPosition();
+      return _getLastKnownPosition();
+    } catch (_) {
+      return _getLastKnownPosition();
     }
   }
 
-  /// Get last known position as fallback
   static Future<Position?> _getLastKnownPosition() async {
     try {
-      print('📍 Trying last known position...');
-      final position = await Geolocator.getLastKnownPosition();
-      if (position != null) {
-        print('✅ Using last known position: (${position.latitude}, ${position.longitude})');
-        return position;
-      }
-    } catch (e) {
-      print('⚠️ Could not get last known position: $e');
+      return await Geolocator.getLastKnownPosition();
+    } catch (_) {
+      return null;
     }
-    return null;
   }
 
-  /// Get address from coordinates
   static Future<String?> getAddressFromCoordinates({
     required double latitude,
     required double longitude,
   }) async {
     try {
-      final placemarks = await placemarkFromCoordinates(
-        latitude,
-        longitude,
-      ).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => <Placemark>[],
-      );
-      
-      if (placemarks.isNotEmpty) {
-        final place = placemarks.first;
-        final address = [
-          place.street,
-          place.locality,
-          place.administrativeArea,
-          place.country,
-        ].where((e) => e != null && e.isNotEmpty).join(', ');
-        
-        return address.isNotEmpty ? address : null;
-      }
-    } catch (e) {
-      print('⚠️ Could not get address: $e');
+      final placemarks = await placemarkFromCoordinates(latitude, longitude)
+          .timeout(const Duration(seconds: 5), onTimeout: () => <Placemark>[]);
+
+      if (placemarks.isEmpty) return null;
+
+      final place = placemarks.first;
+      final address = [
+        place.street,
+        place.locality,
+        place.administrativeArea,
+        place.country,
+      ].where((e) => e != null && e.isNotEmpty).join(', ');
+
+      return address.isNotEmpty ? address : null;
+    } catch (_) {
+      return null;
     }
-    return null;
   }
 
-  /// Check if location services are available
-  static Future<bool> isLocationServiceEnabled() async {
-    return await Geolocator.isLocationServiceEnabled();
+  static Future<bool> isLocationServiceEnabled() =>
+      Geolocator.isLocationServiceEnabled();
+
+  static Future<LocationPermission> checkPermission() =>
+      Geolocator.checkPermission();
+
+  /// Read-only check for startup/app-open flows.
+  static Future<LocationPermission> checkPermissionStatus() =>
+      Geolocator.checkPermission();
+
+  /// Request system location permission only once.
+  /// On subsequent calls, returns current status without showing OS dialog.
+  static Future<LocationPermission> requestPermissionOnce() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasRequested =
+        prefs.getBool(_kHasRequestedLocationPermissionKey) ?? false;
+
+    if (hasRequested) {
+      return Geolocator.checkPermission();
+    }
+
+    await prefs.setBool(_kHasRequestedLocationPermissionKey, true);
+    return Geolocator.requestPermission();
   }
 
-  /// Check location permission status
-  static Future<LocationPermission> checkPermission() async {
-    return await Geolocator.checkPermission();
-  }
+  /// Backward-compatible alias.
+  static Future<LocationPermission> requestPermission() =>
+      requestPermissionOnce();
 
-  /// Request location permission
-  static Future<LocationPermission> requestPermission() async {
-    return await Geolocator.requestPermission();
-  }
+  static Future<bool> openLocationSettings() => Geolocator.openLocationSettings();
 
-  /// Open location settings
-  static Future<bool> openLocationSettings() async {
-    return await Geolocator.openLocationSettings();
-  }
+  static Future<bool> openAppSettings() => Geolocator.openAppSettings();
 
-  /// Get location with both position and address
   static Future<Map<String, dynamic>> getLocationData() async {
     final position = await getCurrentPosition();
-    
+
     if (position == null) {
       return {
         'position': null,

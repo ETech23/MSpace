@@ -17,44 +17,66 @@ final feedRealtimeServiceProvider = Provider<RealtimeService>((ref) {
   return RealtimeService(supabase);
 });
 
-// Cache for location to avoid repeated GPS calls
-class _LocationCache {
-  final double lat;
-  final double lng;
-  final DateTime timestamp;
+// Cache only Home-provided location as a fallback for feed refreshes.
+HomeResolvedLocation? _cachedHomeLocation;
+List<FeedItemModel>? _cachedFeedItems;
 
-  _LocationCache(this.lat, this.lng, this.timestamp);
+// Keep feed stream alive globally so feed opens immediately when user navigates.
+final feedPreloadProvider = Provider<void>((ref) {
+  ref.watch(feedStreamProvider);
+});
 
-  bool get isStale => DateTime.now().difference(timestamp).inMinutes > 5;
-}
-
-_LocationCache? _cachedLocation;
-
-// Main feed provider - simplified
-final feedStreamProvider = StreamProvider.autoDispose<List<FeedItemModel>>((ref) async* {
+// Main feed provider
+final feedStreamProvider = StreamProvider<List<FeedItemModel>>((ref) async* {
   final realtimeService = ref.watch(feedRealtimeServiceProvider);
   final supabase = ref.watch(feedSupabaseProvider);
   final artisanRepository = ref.watch(artisanRepositoryProvider);
   final locationService = LocationService();
+  var disposed = false;
 
-  // Get location (use cache if available)
-  double latitude;
-  double longitude;
+  ref.onDispose(() {
+    disposed = true;
+  });
 
-  if (_cachedLocation != null && !_cachedLocation!.isStale) {
-    latitude = _cachedLocation!.lat;
-    longitude = _cachedLocation!.lng;
-  } else {
-    final position = await locationService.getCurrentLocation();
-    latitude = position?.latitude ?? LocationService.defaultLatitude;
-    longitude = position?.longitude ?? LocationService.defaultLongitude;
-    _cachedLocation = _LocationCache(latitude, longitude, DateTime.now());
+  final homeLocation = ref.watch(homeResolvedLocationProvider);
+  if (homeLocation != null) {
+    _cachedHomeLocation = homeLocation;
   }
 
-  await for (final rows in realtimeService.listenToFeedUpdates()) {
-    final baseItems = rows
-        .map((row) => FeedItemModel.fromJson(row))
+  final latitude = homeLocation?.latitude ??
+      _cachedHomeLocation?.latitude ??
+      LocationService.defaultLatitude;
+  final longitude = homeLocation?.longitude ??
+      _cachedHomeLocation?.longitude ??
+      LocationService.defaultLongitude;
+
+  if (_cachedFeedItems != null && _cachedFeedItems!.isNotEmpty) {
+    yield _cachedFeedItems!;
+  }
+
+  // Fast initial load so first open does not wait for realtime stream emission.
+  try {
+    final initialRows = await supabase
+        .from('feed_items')
+        .select()
+        .order('priority', ascending: false)
+        .order('published_at', ascending: false)
+        .limit(50)
+        .timeout(const Duration(seconds: 8));
+
+    final baseItems = (initialRows as List)
+        .where((row) {
+          final map = row as Map<String, dynamic>;
+          if (!map.containsKey('is_active')) return true;
+          return map['is_active'] == true;
+        })
+        .map((row) => FeedItemModel.fromJson(row as Map<String, dynamic>))
         .toList(growable: false);
+
+    final filteredBaseItems = await _filterInactiveFeedItems(
+      supabase: supabase,
+      items: baseItems,
+    );
 
     final merged = await _mergeWithNearbyData(
       supabase: supabase,
@@ -62,10 +84,45 @@ final feedStreamProvider = StreamProvider.autoDispose<List<FeedItemModel>>((ref)
       locationService: locationService,
       latitude: latitude,
       longitude: longitude,
-      baseItems: baseItems,
+      baseItems: filteredBaseItems,
     );
 
+    _cachedFeedItems = merged;
     yield merged;
+  } catch (e) {
+    print('Initial feed load failed: $e');
+  }
+
+  // Realtime updates with retry to avoid "stuck loading" after transient failures.
+  while (!disposed) {
+    try {
+      await for (final rows in realtimeService.listenToFeedUpdates()) {
+        if (disposed) break;
+        final baseItems = rows
+            .map((row) => FeedItemModel.fromJson(row))
+            .toList(growable: false);
+
+        final filteredBaseItems = await _filterInactiveFeedItems(
+          supabase: supabase,
+          items: baseItems,
+        );
+
+        final merged = await _mergeWithNearbyData(
+          supabase: supabase,
+          artisanRepository: artisanRepository,
+          locationService: locationService,
+          latitude: latitude,
+          longitude: longitude,
+          baseItems: filteredBaseItems,
+        );
+
+        _cachedFeedItems = merged;
+        yield merged;
+      }
+    } catch (e) {
+      print('Feed realtime stream failed: $e');
+      await Future<void>.delayed(const Duration(seconds: 2));
+    }
   }
 });
 
@@ -90,13 +147,12 @@ Future<List<FeedItemModel>> _mergeWithNearbyData({
       .toSet();
 
   // Run jobs and artisans queries in parallel
-  final results = await Future.wait([
+  final results = await Future.wait<List<FeedItemModel>>([
     _fetchNearbyJobs(
       supabase: supabase,
       locationService: locationService,
       latitude: latitude,
       longitude: longitude,
-      radiusKm: radiusKm,
       existingJobIds: existingJobIds,
     ),
     _fetchNearbyArtisans(
@@ -108,8 +164,8 @@ Future<List<FeedItemModel>> _mergeWithNearbyData({
     ),
   ]);
 
-  final jobAndCompletedItems = results[0] as List<FeedItemModel>;
-  final artisanItems = results[1] as List<FeedItemModel>;
+  final jobAndCompletedItems = results[0];
+  final artisanItems = results[1];
 
   final combined = [
     ...baseItems,
@@ -128,12 +184,109 @@ Future<List<FeedItemModel>> _mergeWithNearbyData({
   return combined;
 }
 
+Future<Set<String>> _getActiveUserIds(
+  SupabaseClient supabase,
+  Iterable<String> userIds,
+) async {
+  final ids = userIds.where((id) => id.isNotEmpty).toSet();
+  if (ids.isEmpty) return <String>{};
+  final rows = await supabase
+      .from('users')
+      .select('id,moderation_status')
+      .inFilter('id', ids.toList(growable: false));
+
+  final active = <String>{};
+  for (final row in (rows as List)) {
+    final map = row as Map<String, dynamic>;
+    final status = (map['moderation_status'] as String?) ?? 'active';
+    if (status == 'active') {
+      active.add(map['id'] as String);
+    }
+  }
+  return active;
+}
+
+Future<List<FeedItemModel>> _filterInactiveFeedItems({
+  required SupabaseClient supabase,
+  required List<FeedItemModel> items,
+}) async {
+  if (items.isEmpty) return items;
+  final userIds = <String>{};
+  final jobIdsNeedingLookup = <String>{};
+  for (final item in items) {
+    if (item.artisanId != null) {
+      userIds.add(item.artisanId!);
+    }
+    final job = item.job;
+    if (job != null) {
+      userIds.add(job.customerId);
+      if (job.acceptedBy != null && job.acceptedBy!.isNotEmpty) {
+        userIds.add(job.acceptedBy!);
+      }
+    } else if (item.jobId != null && item.jobId!.isNotEmpty) {
+      jobIdsNeedingLookup.add(item.jobId!);
+    }
+  }
+  Map<String, Map<String, dynamic>> jobById = {};
+  if (jobIdsNeedingLookup.isNotEmpty) {
+    final jobsResponse = await supabase
+        .from('jobs')
+        .select('id,customer_id,accepted_by')
+        .inFilter('id', jobIdsNeedingLookup.toList(growable: false));
+    for (final row in (jobsResponse as List)) {
+      final map = row as Map<String, dynamic>;
+      jobById[map['id'] as String] = map;
+      final customerId = map['customer_id'] as String?;
+      final acceptedBy = map['accepted_by'] as String?;
+      if (customerId != null && customerId.isNotEmpty) {
+        userIds.add(customerId);
+      }
+      if (acceptedBy != null && acceptedBy.isNotEmpty) {
+        userIds.add(acceptedBy);
+      }
+    }
+  }
+
+  if (userIds.isEmpty) return items;
+
+  final activeUserIds = await _getActiveUserIds(supabase, userIds);
+
+  return items.where((item) {
+    if (item.artisanId != null && !activeUserIds.contains(item.artisanId)) {
+      return false;
+    }
+    final job = item.job;
+    if (job != null) {
+      if (!activeUserIds.contains(job.customerId)) return false;
+      if (job.acceptedBy != null &&
+          job.acceptedBy!.isNotEmpty &&
+          !activeUserIds.contains(job.acceptedBy!)) {
+        return false;
+      }
+    } else if (item.jobId != null && item.jobId!.isNotEmpty) {
+      final jobRow = jobById[item.jobId!];
+      if (jobRow != null) {
+        final customerId = jobRow['customer_id'] as String?;
+        final acceptedBy = jobRow['accepted_by'] as String?;
+        if (customerId != null && !activeUserIds.contains(customerId)) {
+          return false;
+        }
+        if (acceptedBy != null &&
+            acceptedBy.isNotEmpty &&
+            !activeUserIds.contains(acceptedBy)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }).toList(growable: false);
+}
+
 Future<List<FeedItemModel>> _fetchNearbyJobs({
   required SupabaseClient supabase,
   required LocationService locationService,
   required double latitude,
   required double longitude,
-  required double radiusKm,
   required Set<String> existingJobIds,
 }) async {
   final items = <FeedItemModel>[];
@@ -153,7 +306,24 @@ Future<List<FeedItemModel>> _fetchNearbyJobs({
             job.status == 'completed')
         .toList();
 
+    final jobUserIds = <String>{};
     for (final job in jobs) {
+      jobUserIds.add(job.customerId);
+      if (job.acceptedBy != null && job.acceptedBy!.isNotEmpty) {
+        jobUserIds.add(job.acceptedBy!);
+      }
+    }
+    final activeUserIds = await _getActiveUserIds(supabase, jobUserIds);
+
+    for (final job in jobs) {
+      if (!activeUserIds.contains(job.customerId)) {
+        continue;
+      }
+      if (job.acceptedBy != null &&
+          job.acceptedBy!.isNotEmpty &&
+          !activeUserIds.contains(job.acceptedBy!)) {
+        continue;
+      }
       if (existingJobIds.contains(job.id)) continue;
 
       final distance = locationService.calculateDistance(
@@ -162,8 +332,6 @@ Future<List<FeedItemModel>> _fetchNearbyJobs({
         job.latitude,
         job.longitude,
       );
-
-      if (distance > radiusKm) continue;
 
       if (job.status == 'pending' || job.status == 'matched') {
         items.add(
@@ -228,6 +396,22 @@ Future<List<FeedItemModel>> _fetchNearbyArtisans({
         }
       },
     );
+
+    // Fallback: if no nearby artisans are found, include featured artisans
+    // so Artisans/Nearby tabs are not empty on sparse locations.
+    if (items.isEmpty) {
+      final featuredResult =
+          await artisanRepository.getFeaturedArtisans(limit: 10);
+      featuredResult.fold(
+        (failure) => print('Error fetching featured artisans: $failure'),
+        (artisans) {
+          for (final artisan in artisans) {
+            if (existingArtisanIds.contains(artisan.userId)) continue;
+            items.add(_artisanToFeedItem(artisan));
+          }
+        },
+      );
+    }
   } catch (e) {
     print('Error fetching nearby artisans: $e');
   }
@@ -249,5 +433,6 @@ FeedItemModel _artisanToFeedItem(ArtisanEntity artisan) {
     artisanPhotoUrl: artisan.photoUrl,
     artisanRating: artisan.rating,
     artisanCategory: artisan.category,
+    distanceKm: artisan.distance,
   );
 }

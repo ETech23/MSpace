@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
+import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../providers/trust_provider.dart';
 import '../widgets/camera_screen.dart';
@@ -33,6 +34,9 @@ class _IdentityVerificationScreenState
   String? _docPath;
   String? _selfiePath;
   bool _isProcessing = false;
+  bool _isCheckingProfile = false;
+  bool _isProfileComplete = true;
+  List<String> _missingProfileFields = [];
 
   @override
   void initState() {
@@ -48,9 +52,80 @@ class _IdentityVerificationScreenState
       final user = ref.read(authProvider).user;
       if (user != null) {
         ref.read(identityVerificationProvider.notifier).loadLatest(user.id);
+        _loadProfileCompleteness();
       }
     } catch (e) {
       debugPrint('Error loading verification: $e');
+    }
+  }
+
+  Future<void> _loadProfileCompleteness() async {
+    if (!mounted) return;
+    setState(() {
+      _isCheckingProfile = true;
+    });
+
+    try {
+      final user = ref.read(authProvider).user;
+      if (user == null) return;
+
+      final supabase = Supabase.instance.client;
+      final userRow = await supabase
+          .from('users')
+          .select('id,name,email,phone,address,photo_url,latitude,longitude,user_type')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (userRow == null) return;
+
+      final missing = <String>[];
+      String? _asString(dynamic value) => value?.toString().trim();
+
+      final name = _asString(userRow['name']);
+      final email = _asString(userRow['email']);
+      final phone = _asString(userRow['phone']);
+      final address = _asString(userRow['address']);
+      final photoUrl = _asString(userRow['photo_url']);
+      final latitude = userRow['latitude'];
+      final longitude = userRow['longitude'];
+      final userType = _asString(userRow['user_type']) ?? 'customer';
+
+      if (name == null || name.isEmpty) missing.add('Full name');
+      if (email == null || email.isEmpty) missing.add('Email');
+      if (phone == null || phone.isEmpty) missing.add('Phone number');
+      if (address == null || address.isEmpty) missing.add('Address');
+      if (photoUrl == null || photoUrl.isEmpty) missing.add('Profile photo');
+      if (latitude == null || longitude == null) missing.add('Location coordinates');
+
+      if (userType == 'artisan') {
+        final artisanRow = await supabase
+            .from('artisan_profiles')
+            .select('category,bio,skills')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        final category = _asString(artisanRow?['category']);
+        final bio = _asString(artisanRow?['bio']);
+        final skills = artisanRow?['skills'];
+
+        if (category == null || category.isEmpty) missing.add('Category/Trade');
+        if (bio == null || bio.isEmpty) missing.add('Professional bio');
+        if (skills is! List || skills.isEmpty) missing.add('Skills');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _missingProfileFields = missing;
+        _isProfileComplete = missing.isEmpty;
+      });
+    } catch (e) {
+      debugPrint('Error checking profile completeness: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingProfile = false;
+        });
+      }
     }
   }
 
@@ -295,6 +370,11 @@ class _IdentityVerificationScreenState
   /// Submit verification
   Future<void> _submitVerification() async {
     if (!mounted) return;
+
+    if (!_isProfileComplete) {
+      _showProfileIncompleteDialog();
+      return;
+    }
     
     if (!_formKey.currentState!.validate()) {
       return;
@@ -369,6 +449,89 @@ class _IdentityVerificationScreenState
     );
   }
 
+  void _showProfileIncompleteDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Complete your profile'),
+        content: Text(
+          'Please complete your profile before submitting verification.\n\n'
+          'Missing: ${_missingProfileFields.join(', ')}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.push('/profile/edit');
+            },
+            child: const Text('Edit Profile'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileIncompleteCard(
+    ThemeData theme,
+    ColorScheme colorScheme,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber, color: Colors.orange),
+              const SizedBox(width: 8),
+              Text(
+                'Profile incomplete',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange[800],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Please complete your profile before verifying your identity.',
+            style: theme.textTheme.bodyMedium,
+          ),
+          if (_missingProfileFields.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Missing: ${_missingProfileFields.join(', ')}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => context.push('/profile/edit'),
+              icon: const Icon(Icons.edit),
+              label: const Text('Complete Profile'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -393,6 +556,7 @@ class _IdentityVerificationScreenState
     
     // ✅ Only allow editing if not verified and not pending
     final canEdit = !isVerified && !isPending && !state.isSubmitting && !_isProcessing;
+    final canSubmit = canEdit && _isProfileComplete;
 
     return Scaffold(
       appBar: AppBar(
@@ -420,6 +584,14 @@ class _IdentityVerificationScreenState
                 status: verification?.status,
                 rejectionReason: verification?.rejectionReason,
               ),
+
+              if (_isCheckingProfile) ...[
+                const SizedBox(height: 16),
+                const LinearProgressIndicator(minHeight: 3),
+              ] else if (!_isProfileComplete) ...[
+                const SizedBox(height: 16),
+                _buildProfileIncompleteCard(theme, colorScheme),
+              ],
               
               // ✅ Show verified badge prominently
               if (isVerified) ...[
@@ -497,7 +669,7 @@ class _IdentityVerificationScreenState
                       const SizedBox(height: 32),
                       
                       FilledButton(
-                        onPressed: canEdit ? _submitVerification : null,
+                        onPressed: canSubmit ? _submitVerification : null,
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(

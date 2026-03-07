@@ -124,6 +124,11 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
       for (final profile in response) {
         final userId = profile['user_id'] as String?;
         final user = userId != null ? usersMap[userId] : null;
+        final moderationStatus =
+            (user?['moderation_status'] as String?) ?? 'active';
+        if (moderationStatus != 'active') {
+          continue;
+        }
 
         // Get searchable fields from profile
         final name = (user?['name'] as String? ?? '').toLowerCase();
@@ -165,6 +170,10 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
         // Apply rating filter
         final rating = (profile['rating'] as num?)?.toDouble() ?? 0.0;
         if (minRating != null && rating < minRating) {
+          continue;
+        }
+        final isAvailable = (profile['is_available'] as bool?) ?? true;
+        if (!isAvailable) {
           continue;
         }
 

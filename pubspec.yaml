@@ -1,7 +1,7 @@
 name: artisan_marketplace
 description: A production-ready artisan marketplace mobile app
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+6
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -9,12 +9,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  cupertino_icons: ^1.0.8
 
   http: ^1.1.0
+
 
   # Firebase
   firebase_core: ^3.4.0
   firebase_auth: ^5.2.0
+  google_sign_in: ^6.2.1
   cloud_firestore: ^5.4.0
   firebase_messaging: ^15.1.0
   firebase_storage: ^12.3.0
@@ -59,7 +62,8 @@ dependencies:
   # Location
   geolocator: ^12.0.0
   geocoding: ^3.0.0
-  google_maps_flutter: ^2.6.0
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
 
   # UI/UX
   cached_network_image: ^3.3.1
@@ -92,7 +96,7 @@ dependencies:
   flutter_local_notifications: ^17.0.0
 
   # Payments
-  flutter_stripe: ^10.1.0
+  flutter_stripe: ^11.3.0
 
   # Utils
   intl: ^0.19.0
@@ -141,3 +145,4 @@ flutter:
     - assets/icons/
     - assets/animations/
     - .env
+    - shorebird.yaml

@@ -6,6 +6,10 @@ import '../../domain/entities/identity_verification_entity.dart';
 import '../../domain/entities/dispute_entity.dart';
 import '../../domain/entities/report_entity.dart';
 import '../../domain/entities/blocked_user_entity.dart';
+import '../../domain/entities/dispute_message_entity.dart';
+import '../../domain/entities/dispute_event_entity.dart';
+import '../../domain/entities/admin_user_entity.dart';
+import '../../domain/entities/platform_analytics_entity.dart';
 import '../../domain/repositories/trust_repository.dart';
 
 final trustRepositoryProvider = Provider<TrustRepository>((ref) {
@@ -302,8 +306,12 @@ final blockedUsersProvider =
 
 class BlockActionNotifier extends StateNotifier<AsyncValue<void>> {
   final TrustRepository repository;
+  final Ref ref;
 
-  BlockActionNotifier({required this.repository}) : super(const AsyncData(null));
+  BlockActionNotifier({
+    required this.repository,
+    required this.ref,
+  }) : super(const AsyncData(null));
 
   Future<bool> blockUser({
     required String blockerId,
@@ -323,6 +331,7 @@ class BlockActionNotifier extends StateNotifier<AsyncValue<void>> {
       },
       (_) {
         state = const AsyncData(null);
+        ref.invalidate(blockedUsersProvider(blockerId));
         return true;
       },
     );
@@ -344,6 +353,7 @@ class BlockActionNotifier extends StateNotifier<AsyncValue<void>> {
       },
       (_) {
         state = const AsyncData(null);
+        ref.invalidate(blockedUsersProvider(blockerId));
         return true;
       },
     );
@@ -352,5 +362,149 @@ class BlockActionNotifier extends StateNotifier<AsyncValue<void>> {
 
 final blockActionProvider =
     StateNotifierProvider<BlockActionNotifier, AsyncValue<void>>(
-  (ref) => BlockActionNotifier(repository: ref.watch(trustRepositoryProvider)),
+  (ref) => BlockActionNotifier(
+    repository: ref.watch(trustRepositoryProvider),
+    ref: ref,
+  ),
+);
+
+// ---------------------------
+// Dispute hearing
+// ---------------------------
+final disputeMessagesProvider =
+    FutureProvider.family<List<DisputeMessageEntity>, String>((ref, disputeId) async {
+  final repository = ref.watch(trustRepositoryProvider);
+  final result = await repository.getDisputeMessages(disputeId: disputeId);
+  return result.fold(
+    (failure) => throw Exception(failure.message),
+    (items) => items,
+  );
+});
+
+final disputeEventsProvider =
+    FutureProvider.family<List<DisputeEventEntity>, String>((ref, disputeId) async {
+  final repository = ref.watch(trustRepositoryProvider);
+  final result = await repository.getDisputeEvents(disputeId: disputeId);
+  return result.fold(
+    (failure) => throw Exception(failure.message),
+    (items) => items,
+  );
+});
+
+class DisputeHearingActionNotifier extends StateNotifier<AsyncValue<void>> {
+  final TrustRepository repository;
+
+  DisputeHearingActionNotifier({required this.repository})
+      : super(const AsyncData(null));
+
+  Future<bool> submitMessage({
+    required String disputeId,
+    required String senderId,
+    required String message,
+    List<String> evidenceFilePaths = const [],
+  }) async {
+    state = const AsyncLoading();
+    final result = await repository.submitDisputeMessage(
+      disputeId: disputeId,
+      senderId: senderId,
+      message: message,
+      evidenceFilePaths: evidenceFilePaths,
+    );
+    return result.fold(
+      (failure) {
+        state = AsyncError(failure.message, StackTrace.current);
+        return false;
+      },
+      (_) {
+        state = const AsyncData(null);
+        return true;
+      },
+    );
+  }
+
+  Future<bool> updateStatus({
+    required String disputeId,
+    required String actorId,
+    required String status,
+    String? note,
+  }) async {
+    state = const AsyncLoading();
+    final result = await repository.updateDisputeStatus(
+      disputeId: disputeId,
+      actorId: actorId,
+      status: status,
+      note: note,
+    );
+    return result.fold(
+      (failure) {
+        state = AsyncError(failure.message, StackTrace.current);
+        return false;
+      },
+      (_) {
+        state = const AsyncData(null);
+        return true;
+      },
+    );
+  }
+}
+
+final disputeHearingActionProvider =
+    StateNotifierProvider<DisputeHearingActionNotifier, AsyncValue<void>>(
+  (ref) => DisputeHearingActionNotifier(repository: ref.watch(trustRepositoryProvider)),
+);
+
+// ---------------------------
+// Admin user management + analytics
+// ---------------------------
+final platformAnalyticsProvider = FutureProvider<PlatformAnalyticsEntity>((ref) async {
+  final repository = ref.watch(trustRepositoryProvider);
+  final result = await repository.adminGetPlatformAnalytics();
+  return result.fold(
+    (failure) => throw Exception(failure.message),
+    (data) => data,
+  );
+});
+
+final adminUsersProvider =
+    FutureProvider.family<List<AdminUserEntity>, String?>((ref, query) async {
+  final repository = ref.watch(trustRepositoryProvider);
+  final result = await repository.adminListUsers(query: query);
+  return result.fold(
+    (failure) => throw Exception(failure.message),
+    (items) => items,
+  );
+});
+
+class AdminUserManagementNotifier extends StateNotifier<AsyncValue<void>> {
+  final TrustRepository repository;
+
+  AdminUserManagementNotifier({required this.repository}) : super(const AsyncData(null));
+
+  Future<bool> setStatus({
+    required String targetUserId,
+    required String status,
+    required String reason,
+  }) async {
+    state = const AsyncLoading();
+    final result = await repository.adminSetUserModerationStatus(
+      targetUserId: targetUserId,
+      status: status,
+      reason: reason,
+    );
+    return result.fold(
+      (failure) {
+        state = AsyncError(failure.message, StackTrace.current);
+        return false;
+      },
+      (_) {
+        state = const AsyncData(null);
+        return true;
+      },
+    );
+  }
+}
+
+final adminUserManagementProvider =
+    StateNotifierProvider<AdminUserManagementNotifier, AsyncValue<void>>(
+  (ref) => AdminUserManagementNotifier(repository: ref.watch(trustRepositoryProvider)),
 );

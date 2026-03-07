@@ -285,7 +285,10 @@ class _JobCard extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     final now = DateTime.now();
-    final diff = now.difference(date);
+    final diff = now.difference(date.toLocal());
+    if (diff.isNegative || diff.inSeconds < 45) {
+      return 'just now';
+    }
 
     if (diff.inDays == 0) {
       if (diff.inHours == 0) {
@@ -312,7 +315,7 @@ class _StatusBadge extends StatelessWidget {
     final config = _getStatusConfig(status, colorScheme);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: config.color.withOpacity(0.15),
         borderRadius: BorderRadius.circular(4),
@@ -399,7 +402,7 @@ class _InfoChip extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(4),
@@ -439,6 +442,8 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            BannerAdWidget(),
+            const SizedBox(height: 16),
             Icon(
               _getIcon(type),
               size: 64,
@@ -468,8 +473,6 @@ class _EmptyState extends StatelessWidget {
                 label: const Text('Post a Job'),
               ),
             ],
-            const SizedBox(height: 16),
-            const BannerAdWidget(),
           ],
         ),
       ),
@@ -527,3 +530,5 @@ class _StatusConfig {
     required this.label,
   });
 }
+
+

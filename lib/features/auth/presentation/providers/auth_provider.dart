@@ -2,11 +2,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/di/injection_container.dart';
 import '../../../../core/services/notification_listener_service.dart'; // ✅ Add this
 import '../../domain/usecases/login_usecase.dart';
+import '../../domain/usecases/login_with_google_usecase.dart';
 import '../../domain/usecases/register_usecase.dart';
 import '../../domain/usecases/logout_usecase.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../../../core/services/push_notification_service.dart';
+import '../../../../core/providers/connectivity_provider.dart';
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -14,6 +16,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Provider for use cases
 final loginUseCaseProvider = Provider((ref) => getIt<LoginUseCase>());
+final loginWithGoogleUseCaseProvider =
+    Provider((ref) => getIt<LoginWithGoogleUseCase>());
 final registerUseCaseProvider = Provider((ref) => getIt<RegisterUseCase>());
 final logoutUseCaseProvider = Provider((ref) => getIt<LogoutUseCase>());
 final authRepositoryProvider = Provider((ref) => getIt<AuthRepository>());
@@ -54,6 +58,7 @@ class AuthState {
 // Auth notifier
 class AuthNotifier extends StateNotifier<AuthState> {
   final LoginUseCase loginUseCase;
+  final LoginWithGoogleUseCase loginWithGoogleUseCase;
   final RegisterUseCase registerUseCase;
   final LogoutUseCase logoutUseCase;
   final AuthRepository authRepository;
@@ -61,6 +66,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   AuthNotifier({
     required this.loginUseCase,
+    required this.loginWithGoogleUseCase,
     required this.registerUseCase,
     required this.logoutUseCase,
     required this.authRepository,
@@ -175,6 +181,12 @@ void _listenToTokenRefresh(String userId) {
     }
   }
 
+  Future<void> recheckSession() async {
+    if (state.isLoading) return;
+    if (state.isAuthenticated && state.user != null) return;
+    await _checkExistingSession();
+  }
+
   Future<void> login({
     required String email,
     required String password,
@@ -208,6 +220,37 @@ void _listenToTokenRefresh(String userId) {
         _initializePushNotifications(user.id);
         _saveFCMToken(user.id);
         _listenToTokenRefresh(user.id);
+        _sendWelcomeNotificationIfNeeded(user.id);
+      },
+    );
+  }
+
+  Future<void> loginWithGoogle() async {
+    state = state.copyWith(isLoading: true, error: null);
+
+    final result = await loginWithGoogleUseCase();
+
+    result.fold(
+      (failure) {
+        state = state.copyWith(
+          isLoading: false,
+          isAuthenticated: false,
+          error: failure.message,
+        );
+      },
+      (user) {
+        state = state.copyWith(
+          isLoading: false,
+          isAuthenticated: true,
+          user: user,
+          error: null,
+          isInitialized: true,
+        );
+        _startNotificationListener(user.id);
+        _initializePushNotifications(user.id);
+        _saveFCMToken(user.id);
+        _listenToTokenRefresh(user.id);
+        _sendWelcomeNotificationIfNeeded(user.id);
       },
     );
   }
@@ -232,7 +275,7 @@ void _listenToTokenRefresh(String userId) {
   }
 
 
-  Future<void> register({
+  Future<bool> register({
     required String email,
     required String password,
     required String name,
@@ -249,6 +292,7 @@ void _listenToTokenRefresh(String userId) {
       userType: userType,
     );
 
+    bool success = false;
     result.fold(
       (failure) {
         state = state.copyWith(
@@ -256,21 +300,58 @@ void _listenToTokenRefresh(String userId) {
           isAuthenticated: false,
           error: failure.message,
         );
+        success = false;
       },
       (user) {
+        // With autoconfirm disabled, no session exists yet —
+        // user must confirm email first. Do NOT set isAuthenticated: true.
         state = state.copyWith(
           isLoading: false,
-          isAuthenticated: true,
-          user: user,
+          isAuthenticated: false,
           error: null,
           isInitialized: true,
         );
-        // ✅ Start notification listener after successful registration
-        _startNotificationListener(user.id);
-         _saveFCMToken(user.id);
-        _listenToTokenRefresh(user.id);
+        success = true;
       },
     );
+    return success;
+  }
+
+  Future<void> _sendWelcomeNotificationIfNeeded(String userId) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final existing = await supabase
+          .from('notifications')
+          .select('id,data')
+          .eq('user_id', userId)
+          .eq('type', 'system')
+          .order('created_at', ascending: false)
+          .limit(20);
+
+      final hasWelcome = (existing as List).any((row) {
+        final data = (row as Map<String, dynamic>)['data'];
+        if (data is Map<String, dynamic>) {
+          return data['subType'] == 'welcome';
+        }
+        return false;
+      });
+      if (hasWelcome) return;
+
+      await supabase.from('notifications').insert({
+        'user_id': userId,
+        'title': 'Welcome to MSpace',
+        'body': 'Complete your profile to enjoy the full benefits of the app.',
+        'type': 'system',
+        'read': false,
+        'data': {
+          'action': 'open_edit_profile',
+          'subType': 'welcome',
+        },
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      print('❌ Failed to send welcome notification: $e');
+    }
   }
 
   Future<void> logout() async {
@@ -369,12 +450,22 @@ void _listenToTokenRefresh(String userId) {
 
 // Auth provider
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier(
+  final notifier = AuthNotifier(
     loginUseCase: ref.watch(loginUseCaseProvider),
+    loginWithGoogleUseCase: ref.watch(loginWithGoogleUseCaseProvider),
     registerUseCase: ref.watch(registerUseCaseProvider),
     logoutUseCase: ref.watch(logoutUseCaseProvider),
     authRepository: ref.watch(authRepositoryProvider),
   );
+
+  ref.listen<AsyncValue<bool>>(isOnlineStreamProvider, (previous, next) {
+    final isOnline = next.value;
+    if (isOnline == true) {
+      notifier.recheckSession();
+    }
+  });
+
+  return notifier;
 });
 
 // Current user provider
@@ -387,4 +478,24 @@ final currentUserProvider = Provider<UserEntity?>((ref) {
 final isAuthInitializedProvider = Provider<bool>((ref) {
   final authState = ref.watch(authProvider);
   return authState.isInitialized;
+});
+
+// Current user's moderation status (active/suspended/blocked)
+final currentUserModerationStatusProvider = StreamProvider<String?>((ref) {
+  final authState = ref.watch(authProvider);
+  final user = authState.user;
+  if (user == null) {
+    return Stream.value(null);
+  }
+
+  final supabase = Supabase.instance.client;
+  return supabase
+      .from('users')
+      .stream(primaryKey: ['id'])
+      .eq('id', user.id)
+      .map((rows) {
+        if (rows.isEmpty) return null;
+        final row = rows.first;
+        return (row['moderation_status'] as String?) ?? 'active';
+      });
 });

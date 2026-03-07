@@ -213,8 +213,6 @@ class _ArtisanJobMatchesScreenState extends ConsumerState<ArtisanJobMatchesScree
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final state = ref.watch(jobProvider);
 
     return Scaffold(
@@ -305,7 +303,7 @@ class _JobMatchCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   decoration: BoxDecoration(
                     color: _getMatchScoreColor(match.matchScore).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
@@ -333,7 +331,7 @@ class _JobMatchCard extends StatelessWidget {
                 const Spacer(),
                 if (match.isPremiumArtisan)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.amber.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
@@ -471,31 +469,33 @@ class _JobMatchCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
+                  child: OutlinedButton.icon(
+                    onPressed: onViewDetails,
+                    icon: const Icon(Icons.info_outline, size: 16),
+                    label: const Text('Details'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
                     onPressed: onDecline,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.grey[700],
+                      foregroundColor: Colors.red.shade700,
                     ),
-                    child: const Text('Decline'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onViewDetails,
-                    child: const Text('Details'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: FilledButton.icon(
-                    onPressed: onAccept,
-                    icon: const Icon(Icons.check),
-                    label: const Text('Accept'),
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Decline'),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: onAccept,
+                icon: const Icon(Icons.check),
+                label: const Text('Accept Job'),
+              ),
             ),
           ],
         ),
@@ -535,7 +535,7 @@ class _InfoChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),

@@ -21,6 +21,7 @@ import '../../features/profile/presentation/screens/notification_settings_screen
 import '../../features/profile/presentation/screens/privacy_settings_screen.dart';
 import '../../features/profile/presentation/screens/saved_artisans_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
+import '../../features/messaging/presentation/screens/conversations_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = 
     GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -85,31 +86,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const NotificationsScreen(),
       ),
 
-      // Messages (Coming Soon Placeholder)
+      // Messages
       GoRoute(
         path: '/messages',
         name: 'messages',
-        builder: (context, state) => Scaffold(
-          appBar: AppBar(title: const Text('Messages')),
-          body: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.message, size: 80, color: Colors.grey),
-                SizedBox(height: 16),
-                Text(
-                  'Messaging feature coming soon!',
-                  style: TextStyle(fontSize: 18),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'You\'ll be able to chat with artisans here',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-        ),
+        builder: (context, state) => const ConversationsScreen(),
       ),
 
       // Profile
@@ -143,9 +124,35 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/artisan/:id',
         name: 'artisan-detail',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final artisanId = state.pathParameters['id'] ?? '';
-          return ArtisanDetailScreen(artisanId: artisanId);
+          final initialArtisan = state.extra is ArtisanEntity
+              ? state.extra as ArtisanEntity
+              : null;
+          return CustomTransitionPage(
+            key: state.pageKey,
+            child: ArtisanDetailScreen(
+              artisanId: artisanId,
+              initialArtisan: initialArtisan,
+            ),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              );
+              return FadeTransition(
+                opacity: curved,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.025),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: child,
+                ),
+              );
+            },
+          );
         },
       ),
 

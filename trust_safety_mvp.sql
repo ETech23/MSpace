@@ -27,6 +27,32 @@ create table if not exists identity_verifications (
   rejection_reason text
 );
 
+-- Sync user/artisan verified flags when a verification is reviewed.
+create or replace function sync_user_verification_status()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  if new.status = 'verified' then
+    update users set verified = true where id = new.user_id;
+    update artisan_profiles set verified = true where user_id = new.user_id;
+  elsif new.status = 'rejected' then
+    update users set verified = false where id = new.user_id;
+    update artisan_profiles set verified = false where user_id = new.user_id;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_sync_user_verification_status on identity_verifications;
+create trigger trg_sync_user_verification_status
+after update of status on identity_verifications
+for each row
+when (old.status is distinct from new.status)
+execute function sync_user_verification_status();
+
 create index if not exists idx_identity_verifications_user_id
   on identity_verifications(user_id);
 create index if not exists idx_identity_verifications_status
@@ -72,6 +98,10 @@ create table if not exists disputes (
   resolved_by uuid references users(id),
   resolution_notes text
 );
+
+-- If disputes table already exists, ensure missing columns are added.
+alter table disputes
+  add column if not exists opened_by uuid references users(id) on delete cascade;
 
 create index if not exists idx_disputes_booking_id
   on disputes(booking_id);

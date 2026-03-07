@@ -102,20 +102,20 @@ class JobModel {
       status: json['status'] as String? ?? 'pending',
       acceptedBy: json['accepted_by'] as String?,
       acceptedAt: json['accepted_at'] != null
-          ? DateTime.parse(json['accepted_at'] as String)
+          ? _parseServerTimestamp(json['accepted_at'] as String)
           : null,
       startedAt: json['started_at'] != null
-          ? DateTime.parse(json['started_at'] as String)
+          ? _parseServerTimestamp(json['started_at'] as String)
           : null,
       completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at'] as String)
+          ? _parseServerTimestamp(json['completed_at'] as String)
           : null,
       cancelledAt: json['cancelled_at'] != null
-          ? DateTime.parse(json['cancelled_at'] as String)
+          ? _parseServerTimestamp(json['cancelled_at'] as String)
           : null,
       isBoosted: json['is_boosted'] as bool? ?? false,
       boostExpiresAt: json['boost_expires_at'] != null
-          ? DateTime.parse(json['boost_expires_at'] as String)
+          ? _parseServerTimestamp(json['boost_expires_at'] as String)
           : null,
       priorityLevel: json['priority_level'] as int? ?? 0,
       images: json['images'] != null 
@@ -123,9 +123,9 @@ class JobModel {
           : [],
       notifiedArtisanCount: json['notified_artisan_count'] as int? ?? 0,
       viewCount: json['view_count'] as int? ?? 0,
-      createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
+      createdAt: _parseServerTimestamp(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
+          ? _parseServerTimestamp(json['updated_at'] as String)
           : null,
       bookingId: json['booking_id'] as String?, // 🆕 NEW FIELD
       distance: json['distance'] != null ? (json['distance'] as num).toDouble() : null,
@@ -323,12 +323,12 @@ class JobMatchModel {
       isPremiumArtisan: json['is_premium_artisan'] as bool? ?? false,
       priorityTier: json['priority_tier'] as int? ?? 0,
       notificationDelaySeconds: json['notification_delay_seconds'] as int? ?? 0,
-      notifiedAt: DateTime.parse(json['notified_at'] as String),
+      notifiedAt: _parseServerTimestamp(json['notified_at'] as String),
       viewedAt: json['viewed_at'] != null 
-          ? DateTime.parse(json['viewed_at'] as String)
+          ? _parseServerTimestamp(json['viewed_at'] as String)
           : null,
       respondedAt: json['responded_at'] != null
-          ? DateTime.parse(json['responded_at'] as String)
+          ? _parseServerTimestamp(json['responded_at'] as String)
           : null,
       response: json['response'] as String?,
       declineReason: json['decline_reason'] as String?,
@@ -355,6 +355,7 @@ class JobFormModel {
   final String? title;
   final String? description;
   final String? category;
+  final String? serviceQuery;
   final double? budgetMin;
   final double? budgetMax;
   final double? latitude;
@@ -370,6 +371,7 @@ class JobFormModel {
     this.title,
     this.description,
     this.category,
+    this.serviceQuery,
     this.budgetMin,
     this.budgetMax,
     this.latitude,
@@ -416,6 +418,7 @@ class FeedItemModel {
   final String? artisanPhotoUrl;
   final double? artisanRating;
   final String? artisanCategory;
+  final double? distanceKm;
 
   FeedItemModel({
     required this.id,
@@ -443,6 +446,7 @@ class FeedItemModel {
     this.artisanPhotoUrl,
     this.artisanRating,
     this.artisanCategory,
+    this.distanceKm,
   });
 
   factory FeedItemModel.fromJson(Map<String, dynamic> json) {
@@ -463,9 +467,9 @@ class FeedItemModel {
       sponsorId: json['sponsor_id'] as String?,
       viewCount: json['view_count'] as int? ?? 0,
       clickCount: json['click_count'] as int? ?? 0,
-      publishedAt: DateTime.parse(json['published_at'] as String),
+      publishedAt: _parseServerTimestamp(json['published_at'] as String),
       expiresAt: json['expires_at'] != null
-          ? DateTime.parse(json['expires_at'] as String)
+          ? _parseServerTimestamp(json['expires_at'] as String)
           : null,
       priority: json['priority'] as int? ?? 0,
       isActive: json['is_active'] as bool? ?? true,
@@ -478,6 +482,17 @@ class FeedItemModel {
           ? (json['artisan_rating'] as num).toDouble()
           : null,
       artisanCategory: json['artisan_category'] as String?,
+      distanceKm: json['distance_km'] != null
+          ? (json['distance_km'] as num).toDouble()
+          : null,
     );
   }
+}
+
+DateTime _parseServerTimestamp(String value) {
+  final trimmed = value.trim();
+  final hasTimezone =
+      trimmed.endsWith('Z') || RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(trimmed);
+  final normalized = hasTimezone ? trimmed : '${trimmed}Z';
+  return DateTime.parse(normalized).toLocal();
 }

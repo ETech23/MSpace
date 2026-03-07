@@ -3,13 +3,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'ad_helper.dart';
+import 'ad_remote_config_service.dart';
+import 'ad_runtime_config.dart';
 
 class BannerAdWidget extends StatefulWidget {
   final EdgeInsetsGeometry padding;
 
-  const BannerAdWidget({
+  BannerAdWidget({
     super.key,
-    this.padding = const EdgeInsets.symmetric(vertical: 8),
+    this.padding = const EdgeInsets.fromLTRB(0, 8, 0, 4),
   });
 
   @override
@@ -19,24 +21,17 @@ class BannerAdWidget extends StatefulWidget {
 class _BannerAdWidgetState extends State<BannerAdWidget> {
   BannerAd? _bannerAd;
   bool _isLoaded = false;
+  String _currentAdUnitId = '';
+
+  static const double _adWidth = 360;
+  static const double _adHeight = 90;
 
   @override
   void initState() {
     super.initState();
-    if (_shouldLoadAds && AdHelper.bannerAdUnitId.isNotEmpty) {
-      _bannerAd = BannerAd(
-        size: AdSize.banner,
-        adUnitId: AdHelper.bannerAdUnitId,
-        request: const AdRequest(),
-        listener: BannerAdListener(
-          onAdLoaded: (_) => setState(() => _isLoaded = true),
-          onAdFailedToLoad: (ad, _) {
-            ad.dispose();
-            setState(() => _isLoaded = false);
-          },
-        ),
-      )..load();
-    }
+    AdRemoteConfigService.instance.configListenable
+        .addListener(_onRemoteConfigChanged);
+    _reloadBanner();
   }
 
   bool get _shouldLoadAds =>
@@ -46,8 +41,69 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   void dispose() {
+    AdRemoteConfigService.instance.configListenable
+        .removeListener(_onRemoteConfigChanged);
     _bannerAd?.dispose();
     super.dispose();
+  }
+
+  void _onRemoteConfigChanged() {
+    if (!mounted) return;
+    _reloadBanner();
+  }
+
+  void _reloadBanner() {
+    final config = AdRemoteConfigService.instance.currentConfig;
+    final nextUnitId = _resolveBannerAdUnitId(config);
+
+    if (!_shouldLoadAds || nextUnitId.isEmpty) {
+      _currentAdUnitId = '';
+      _bannerAd?.dispose();
+      _bannerAd = null;
+      if (_isLoaded) {
+        setState(() => _isLoaded = false);
+      }
+      return;
+    }
+
+    if (_currentAdUnitId == nextUnitId && _bannerAd != null) {
+      return;
+    }
+
+    _currentAdUnitId = nextUnitId;
+    _bannerAd?.dispose();
+    _bannerAd = BannerAd(
+      size: const AdSize(
+        width: _adWidth ~/ 1,
+        height: _adHeight ~/ 1,
+      ),
+      adUnitId: nextUnitId,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (_) {
+          if (!mounted) return;
+          setState(() => _isLoaded = true);
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          debugPrint('Banner ad failed: ${error.code} ${error.message}');
+          if (!mounted) return;
+          setState(() => _isLoaded = false);
+        },
+      ),
+    )..load();
+
+    if (_isLoaded) {
+      setState(() => _isLoaded = false);
+    }
+  }
+
+  String _resolveBannerAdUnitId(AdRuntimeConfig config) {
+    final remoteOrFallback = config.bannerAdUnitIdForCurrentPlatform();
+    if (remoteOrFallback.isNotEmpty) {
+      return remoteOrFallback;
+    }
+    return AdHelper.bannerAdUnitId;
   }
 
   @override
@@ -58,10 +114,25 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
     return Padding(
       padding: widget.padding,
-      child: SizedBox(
-        width: _bannerAd!.size.width.toDouble(),
-        height: _bannerAd!.size.height.toDouble(),
-        child: AdWidget(ad: _bannerAd!),
+      child: Center(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            width: _adWidth,
+            height: _adHeight,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.5),
+                width: 1,
+              ),
+            ),
+            child: AdWidget(ad: _bannerAd!),
+          ),
+        ),
       ),
     );
   }
@@ -84,24 +155,14 @@ class NativeAdWidget extends StatefulWidget {
 class _NativeAdWidgetState extends State<NativeAdWidget> {
   NativeAd? _nativeAd;
   bool _isLoaded = false;
+  String _currentAdUnitId = '';
 
   @override
   void initState() {
     super.initState();
-    if (_shouldLoadNative && AdHelper.nativeAdUnitId.isNotEmpty) {
-      _nativeAd = NativeAd(
-        adUnitId: AdHelper.nativeAdUnitId,
-        factoryId: 'listTile',
-        request: const AdRequest(),
-        listener: NativeAdListener(
-          onAdLoaded: (_) => setState(() => _isLoaded = true),
-          onAdFailedToLoad: (ad, _) {
-            ad.dispose();
-            setState(() => _isLoaded = false);
-          },
-        ),
-      )..load();
-    }
+    AdRemoteConfigService.instance.configListenable
+        .addListener(_onRemoteConfigChanged);
+    _reloadNative();
   }
 
   bool get _shouldLoadNative =>
@@ -109,8 +170,66 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
 
   @override
   void dispose() {
+    AdRemoteConfigService.instance.configListenable
+        .removeListener(_onRemoteConfigChanged);
     _nativeAd?.dispose();
     super.dispose();
+  }
+
+  void _onRemoteConfigChanged() {
+    if (!mounted) return;
+    _reloadNative();
+  }
+
+  void _reloadNative() {
+    final config = AdRemoteConfigService.instance.currentConfig;
+    final nextUnitId = _resolveNativeAdUnitId(config);
+
+    if (!_shouldLoadNative || nextUnitId.isEmpty) {
+      _currentAdUnitId = '';
+      _nativeAd?.dispose();
+      _nativeAd = null;
+      if (_isLoaded) {
+        setState(() => _isLoaded = false);
+      }
+      return;
+    }
+
+    if (_currentAdUnitId == nextUnitId && _nativeAd != null) {
+      return;
+    }
+
+    _currentAdUnitId = nextUnitId;
+    _nativeAd?.dispose();
+    _nativeAd = NativeAd(
+      adUnitId: nextUnitId,
+      factoryId: 'listTile',
+      request: const AdRequest(),
+      listener: NativeAdListener(
+        onAdLoaded: (_) {
+          if (!mounted) return;
+          setState(() => _isLoaded = true);
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          debugPrint('Native ad failed: ${error.code} ${error.message}');
+          if (!mounted) return;
+          setState(() => _isLoaded = false);
+        },
+      ),
+    )..load();
+
+    if (_isLoaded) {
+      setState(() => _isLoaded = false);
+    }
+  }
+
+  String _resolveNativeAdUnitId(AdRuntimeConfig config) {
+    final remoteOrFallback = config.nativeAdUnitIdForCurrentPlatform();
+    if (remoteOrFallback.isNotEmpty) {
+      return remoteOrFallback;
+    }
+    return AdHelper.nativeAdUnitId;
   }
 
   @override
@@ -127,6 +246,6 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
     }
 
     // Fallback to banner on non-Android or if native isn't ready.
-    return const BannerAdWidget();
+    return BannerAdWidget();
   }
 }

@@ -31,6 +31,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+/android/build/
 /coverage/
 
 # Symbolication related
@@ -49,3 +50,7 @@ firebase-service-account.json
 .env
 .env.*
 !.env.example
+shorebird*.env
+android/key.properties
+*.jks
+.flutter-plugins

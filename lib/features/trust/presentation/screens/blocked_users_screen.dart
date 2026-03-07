@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../feed/presentation/providers/feed_provider.dart';
 import '../providers/trust_provider.dart';
 
 class BlockedUsersScreen extends ConsumerWidget {
@@ -66,6 +67,7 @@ class BlockedUsersScreen extends ConsumerWidget {
                             if (!context.mounted) return;
                             if (ok) {
                               ref.invalidate(blockedUsersProvider(currentUser.id));
+                              ref.invalidate(feedStreamProvider);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('User unblocked'),

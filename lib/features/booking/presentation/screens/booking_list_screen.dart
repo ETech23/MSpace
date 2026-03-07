@@ -19,6 +19,15 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String? _selectedStatus;
+  static const List<String?> _statusFilters = [
+    null,
+    'pending',
+    'accepted',
+    'in_progress',
+    'completed',
+    'cancelled',
+    'rejected',
+  ];
 
   @override
   void initState() {
@@ -82,6 +91,48 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
     _loadBookings();
   }
 
+  void _showFilterDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Filter Bookings', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _statusFilters.map((status) {
+                    final label = status == null
+                        ? 'All'
+                        : status.replaceAll('_', ' ').split(' ').map((w) => '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
+                    final isSelected = _selectedStatus == status;
+                    return ChoiceChip(
+                      label: Text(label),
+                      selected: isSelected,
+                      onSelected: (_) {
+                        setState(() => _selectedStatus = status);
+                        Navigator.pop(ctx);
+                        _loadBookings();
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -97,12 +148,7 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_list),
-            onPressed: () {
-              // TODO: Show filter dialog
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Filters coming soon!')),
-              );
-            },
+            onPressed: _showFilterDialog,
           ),
         ],
         bottom: TabBar(
@@ -134,6 +180,8 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      BannerAdWidget(),
+                      const SizedBox(height: 16),
                       Icon(
                         Icons.error_outline,
                         size: 64,
@@ -156,8 +204,6 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
                         icon: const Icon(Icons.refresh),
                         label: const Text('Retry'),
                       ),
-                      const SizedBox(height: 16),
-                      const BannerAdWidget(),
                     ],
                   ),
                 )
@@ -171,20 +217,23 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
                           (bookingState.bookings.length / 3).floor() +
                           1,
                       itemBuilder: (context, index) {
-                        const adInterval = 3;
-                        final adSlots =
-                            (bookingState.bookings.length / adInterval).floor();
-                        final totalCount = bookingState.bookings.length + adSlots;
-
-                        if (index == totalCount) {
-                          return const Center(child: BannerAdWidget());
+                        if (index == 0) {
+                          return Padding(
+                            padding: EdgeInsets.only(bottom: 12),
+                            child: Center(child: BannerAdWidget()),
+                          );
                         }
-                        final isAdIndex = (index + 1) % (adInterval + 1) == 0;
+
+                        final adjustedIndex = index - 1;
+                        const adInterval = 3;
+                        final isAdIndex =
+                            (adjustedIndex + 1) % (adInterval + 1) == 0;
                         if (isAdIndex) {
                           return const NativeAdWidget();
                         }
 
-                        final bookingIndex = index - (index ~/ (adInterval + 1));
+                        final bookingIndex = adjustedIndex -
+                            (adjustedIndex ~/ (adInterval + 1));
                         final booking = bookingState.bookings[bookingIndex];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
@@ -252,6 +301,8 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            BannerAdWidget(),
+            const SizedBox(height: 16),
             Icon(icon, size: 80, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
@@ -275,11 +326,10 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
                 icon: const Icon(Icons.search),
                 label: const Text('Find Artisans'),
               ),
-            const SizedBox(height: 16),
-            const BannerAdWidget(),
           ],
         ),
       ),
     );
   }
 }
+

@@ -6,6 +6,10 @@ import '../entities/identity_verification_entity.dart';
 import '../entities/dispute_entity.dart';
 import '../entities/report_entity.dart';
 import '../entities/blocked_user_entity.dart';
+import '../entities/dispute_message_entity.dart';
+import '../entities/dispute_event_entity.dart';
+import '../entities/admin_user_entity.dart';
+import '../entities/platform_analytics_entity.dart';
 
 abstract class TrustRepository {
   // Identity verification
@@ -76,4 +80,36 @@ abstract class TrustRepository {
   Future<Either<Failure, List<BlockedUserEntity>>> getBlockedUsers({
     required String blockerId,
   });
+
+  // Dispute hearing
+  Future<Either<Failure, List<DisputeMessageEntity>>> getDisputeMessages({
+    required String disputeId,
+  });
+  Future<Either<Failure, List<DisputeEventEntity>>> getDisputeEvents({
+    required String disputeId,
+  });
+  Future<Either<Failure, void>> submitDisputeMessage({
+    required String disputeId,
+    required String senderId,
+    required String message,
+    List<String> evidenceFilePaths,
+  });
+  Future<Either<Failure, void>> updateDisputeStatus({
+    required String disputeId,
+    required String actorId,
+    required String status,
+    String? note,
+  });
+
+  // Admin user management and analytics
+  Future<Either<Failure, List<AdminUserEntity>>> adminListUsers({
+    String? query,
+    String? moderationStatus,
+  });
+  Future<Either<Failure, void>> adminSetUserModerationStatus({
+    required String targetUserId,
+    required String status,
+    required String reason,
+  });
+  Future<Either<Failure, PlatformAnalyticsEntity>> adminGetPlatformAnalytics();
 }

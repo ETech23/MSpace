@@ -1,4 +1,4 @@
-package com.example.artisan_marketplace_new
+package com.mspace.app
 
 import android.view.LayoutInflater
 import android.widget.Button
@@ -61,3 +61,4 @@ class NativeAdFactory(private val layoutInflater: LayoutInflater) : NativeAdFact
     return adView
   }
 }
+

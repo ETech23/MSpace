@@ -171,7 +171,7 @@ class _NotificationSettingsScreenState
 
           // Section Header
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
             child: Text(
               'NOTIFICATION TYPES',
               style: theme.textTheme.labelSmall?.copyWith(

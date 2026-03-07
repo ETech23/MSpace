@@ -33,8 +33,6 @@ class _UserReviewsScreenState extends ConsumerState<UserReviewsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final reviewState = ref.watch(reviewProvider);
     final user = ref.watch(authProvider).user;
 
@@ -325,9 +323,74 @@ class _UserReviewsScreenState extends ConsumerState<UserReviewsScreen> {
   }
 
   void _editReview(ReviewEntity review) {
-    // TODO: Navigate to edit review screen
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Edit review coming soon!')),
+    final commentController = TextEditingController(text: review.comment ?? '');
+    double selectedRating = review.rating;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit Review'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Rating: ${selectedRating.toStringAsFixed(1)}'),
+              Slider(
+                value: selectedRating,
+                min: 1,
+                max: 5,
+                divisions: 8,
+                label: selectedRating.toStringAsFixed(1),
+                onChanged: (value) {
+                  setDialogState(() => selectedRating = value);
+                },
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: commentController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Comment',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final success = await ref.read(reviewProvider.notifier).updateReview(
+                      reviewId: review.id,
+                      rating: selectedRating,
+                      comment: commentController.text.trim(),
+                    );
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                if (success) {
+                  final user = ref.read(authProvider).user;
+                  if (user != null) {
+                    await ref.read(reviewProvider.notifier).loadUserReviews(user.id);
+                  }
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Review updated successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

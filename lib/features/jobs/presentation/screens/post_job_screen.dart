@@ -5,8 +5,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/widgets/location_permission_nudge.dart';
 import '../../data/models/job_model.dart';
 import '../providers/job_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -23,6 +25,7 @@ class _PostJobScreenState extends ConsumerState<PostJobScreen> {
   final LocationService _locationService = LocationService();
 
   String? _selectedCategory;
+  final _categoryInputController = TextEditingController();
   final _descriptionController = TextEditingController();
   double? _budgetMin;
   double? _budgetMax;
@@ -34,6 +37,7 @@ class _PostJobScreenState extends ConsumerState<PostJobScreen> {
   double? _longitude;
   String? _address;
   bool _isLoadingLocation = false;
+  bool _hasShownLocationSettingsNudge = false;
 
   final List<String> _categories = [
     'Plumber',
@@ -54,6 +58,7 @@ class _PostJobScreenState extends ConsumerState<PostJobScreen> {
 
   @override
   void dispose() {
+    _categoryInputController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
@@ -62,6 +67,35 @@ class _PostJobScreenState extends ConsumerState<PostJobScreen> {
     setState(() => _isLoadingLocation = true);
 
     try {
+      final permission = await _locationService.checkPermissionStatus();
+      if (permission == LocationPermission.denied) {
+        final hasRequested = await _locationService.hasRequestedLocationPermission();
+        if (!hasRequested && mounted) {
+          final shouldRequest = await _showLocationPermissionRationaleDialog();
+          if (shouldRequest == true) {
+            final result = await _locationService.requestPermissionOnce();
+            if (result != LocationPermission.always &&
+                result != LocationPermission.whileInUse) {
+              await _showLocationSettingsNudge();
+              if (mounted) setState(() => _isLoadingLocation = false);
+              return;
+            }
+          } else {
+            if (mounted) setState(() => _isLoadingLocation = false);
+            return;
+          }
+        } else {
+          await _showLocationSettingsNudge();
+          if (mounted) setState(() => _isLoadingLocation = false);
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        await _showLocationSettingsNudge();
+        if (mounted) setState(() => _isLoadingLocation = false);
+        return;
+      }
+
       final position = await _locationService.getCurrentLocation();
       if (position != null && mounted) {
         setState(() {
@@ -100,13 +134,36 @@ class _PostJobScreenState extends ConsumerState<PostJobScreen> {
     }
   }
 
+  Future<bool?> _showLocationPermissionRationaleDialog() {
+    return LocationPermissionNudge.showRationaleDialog(
+      context,
+      title: 'Allow location for job posting?',
+      message:
+          'We need your location to match your job request with nearby artisans.',
+      primaryLabel: 'Allow location',
+      secondaryLabel: 'Not now',
+    );
+  }
+
+  Future<void> _showLocationSettingsNudge() async {
+    if (!mounted || _hasShownLocationSettingsNudge) return;
+    _hasShownLocationSettingsNudge = true;
+    LocationPermissionNudge.showSettingsBanner(
+      context,
+      message:
+          'Location access is off. Enable it in Settings to post location-based jobs.',
+      onOpenSettings: _locationService.openAppSettings,
+    );
+  }
+
   // In post_job_screen.dart - Update _submitJob
 
 Future<void> _submitJob() async {
   if (!_formKey.currentState!.validate()) return;
-  
-  if (_selectedCategory == null) {
-    _showError('Please select a service category');
+
+  final resolvedCategory = _resolveJobCategory();
+  if (resolvedCategory == null) {
+    _showError('Please select or type a service category');
     return;
   }
   
@@ -126,10 +183,20 @@ Future<void> _submitJob() async {
     timeStart = '${_preferredTime!.hour.toString().padLeft(2, '0')}:${_preferredTime!.minute.toString().padLeft(2, '0')}';
   }
 
+  final rawCategoryText = _categoryInputController.text.trim();
+  final titleCategory =
+      rawCategoryText.isNotEmpty ? rawCategoryText : resolvedCategory;
+  final descriptionText = _buildSmartDescription(
+    rawCategoryText: rawCategoryText,
+    resolvedCategory: resolvedCategory,
+    baseDescription: _descriptionController.text.trim(),
+  );
+
   final form = JobFormModel(
-    title: '$_selectedCategory Service',
-    description: _descriptionController.text.trim(),
-    category: _selectedCategory,
+    title: '$titleCategory Service',
+    description: descriptionText,
+    category: resolvedCategory,
+    serviceQuery: rawCategoryText.isNotEmpty ? rawCategoryText : null,
     budgetMin: _budgetMin,
     budgetMax: _budgetMax,
     latitude: _latitude,
@@ -147,13 +214,18 @@ Future<void> _submitJob() async {
     await Future.delayed(const Duration(seconds: 3));
     
     // ✅ RELOAD job to get updated notified_artisan_count
-    final updatedJobs = await ref.read(jobProvider.notifier).loadCustomerJobs(user.id);
+    await ref.read(jobProvider.notifier).loadCustomerJobs(user.id);
     final updatedJob = ref.read(jobProvider).customerJobs
         .firstWhere((j) => j.id == job.id, orElse: () => job);
     
     if (mounted) {
-      await _showSuccessDialog(updatedJob);
-      context.pop();
+      final openMyJobs = await _showSuccessDialog(updatedJob);
+      if (!mounted) return;
+      if (openMyJobs == true) {
+        context.go('/my-jobs');
+      } else {
+        context.pop();
+      }
     }
   } else if (mounted) {
     final error = ref.read(jobProvider).error;
@@ -161,8 +233,67 @@ Future<void> _submitJob() async {
   }
 }
 
-Future<void> _showSuccessDialog(JobModel job) async {
-  return showDialog(
+String? _resolveJobCategory() {
+  final typed = _categoryInputController.text.trim();
+  if (_selectedCategory != null && _selectedCategory!.isNotEmpty) {
+    return _selectedCategory;
+  }
+  if (typed.isEmpty) return null;
+  return _mapToCanonicalCategory(typed);
+}
+
+String _buildSmartDescription({
+  required String rawCategoryText,
+  required String resolvedCategory,
+  required String baseDescription,
+}) {
+  if (rawCategoryText.isEmpty) return baseDescription;
+  if (rawCategoryText.toLowerCase() == resolvedCategory.toLowerCase()) {
+    return baseDescription;
+  }
+  return 'Requested skill/category: $rawCategoryText\n$baseDescription';
+}
+
+String _mapToCanonicalCategory(String input) {
+  final text = input.toLowerCase().trim();
+  if (text.isEmpty) return 'General';
+
+  final direct = _categories.firstWhere(
+    (c) => c.toLowerCase() == text,
+    orElse: () => '',
+  );
+  if (direct.isNotEmpty) return direct;
+
+  const keywordMap = <String, List<String>>{
+    'Plumber': ['plumb', 'pipe', 'leak', 'water', 'tap', 'toilet', 'drain', 'bathroom'],
+    'Electrician': ['elect', 'wiring', 'socket', 'power', 'light', 'generator', 'inverter', 'circuit'],
+    'Carpenter': ['carpent', 'wood', 'furniture', 'wardrobe', 'cabinet', 'shelf', 'door frame'],
+    'Painter': ['paint', 'wall coating', 'interior', 'exterior', 'spray paint'],
+    'Mason': ['mason', 'block', 'brick', 'concrete', 'tiling', 'tile', 'screed', 'plaster'],
+    'Mechanic': ['mechanic', 'car', 'engine', 'vehicle', 'auto', 'brake', 'gearbox'],
+    'Cleaner': ['clean', 'laundry', 'janitor', 'fumigation', 'wash', 'housekeeping'],
+  };
+
+  for (final entry in keywordMap.entries) {
+    for (final keyword in entry.value) {
+      if (text.contains(keyword)) return entry.key;
+    }
+  }
+
+  return _toTitleCase(input);
+}
+
+String _toTitleCase(String value) {
+  final words = value.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+  return words
+      .map((w) => w.length == 1
+          ? w.toUpperCase()
+          : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+      .join(' ');
+}
+
+Future<bool?> _showSuccessDialog(JobModel job) async {
+  return showDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (context) => AlertDialog(
@@ -204,13 +335,13 @@ Future<void> _showSuccessDialog(JobModel job) async {
         if (job.notifiedArtisanCount == 0)
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(context, false);
               // TODO: Expand search radius
             },
             child: const Text('Search Wider Area'),
           ),
         FilledButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.pop(context, true),
           child: const Text('View My Jobs'),
         ),
       ],
@@ -269,12 +400,39 @@ Future<void> _showSuccessDialog(JobModel job) async {
                   label: Text(category),
                   selected: isSelected,
                   onSelected: (selected) {
-                    setState(() => _selectedCategory = selected ? category : null);
+                    setState(() {
+                      _selectedCategory = selected ? category : null;
+                      if (selected) {
+                        _categoryInputController.text = category;
+                      }
+                    });
                   },
                   selectedColor: colorScheme.primaryContainer,
                   backgroundColor: colorScheme.surfaceContainerHighest,
                 );
               }).toList(),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _categoryInputController,
+              decoration: InputDecoration(
+                labelText: 'Or type category/skill',
+                hintText: 'e.g. pipe leakage, tiling, wiring',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: colorScheme.surfaceContainerHighest,
+              ),
+              onChanged: (value) {
+                final typed = value.trim();
+                if (typed.isEmpty) {
+                  setState(() => _selectedCategory = null);
+                  return;
+                }
+                final mapped = _mapToCanonicalCategory(typed);
+                setState(() => _selectedCategory = mapped);
+              },
             ),
             const SizedBox(height: 24),
 

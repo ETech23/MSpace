@@ -13,10 +13,16 @@ class ArtisanRepositoryImpl implements ArtisanRepository {
   @override
   Future<Either<Failure, List<ArtisanEntity>>> getFeaturedArtisans({
     int limit = 10,
+    double? latitude,
+    double? longitude,
+    bool nationwide = false,
   }) async {
     try {
       final artisans = await remoteDataSource.getFeaturedArtisans(
         limit: limit,
+        latitude: latitude,
+        longitude: longitude,
+        nationwide: nationwide,
       );
       return Right(artisans.map((model) => model.toEntity()).toList());
     } on ServerException catch (e) {

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../feed/presentation/providers/feed_provider.dart';
 import '../providers/trust_provider.dart';
 
 class ReportFormScreen extends ConsumerStatefulWidget {
@@ -48,11 +49,15 @@ class _ReportFormScreenState extends ConsumerState<ReportFormScreen> {
         _alsoBlockUser &&
         widget.targetType == 'user' &&
         widget.targetId.isNotEmpty) {
-      await ref.read(blockActionProvider.notifier).blockUser(
+      final blocked = await ref.read(blockActionProvider.notifier).blockUser(
             blockerId: user.id,
             blockedUserId: widget.targetId,
             reason: _reasonController.text.trim(),
           );
+      if (blocked) {
+        ref.invalidate(blockedUsersProvider(user.id));
+        ref.invalidate(feedStreamProvider);
+      }
     }
 
     if (ok && mounted) {

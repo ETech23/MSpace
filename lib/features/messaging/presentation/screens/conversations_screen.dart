@@ -44,7 +44,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               padding: const EdgeInsets.only(right: 16),
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   decoration: BoxDecoration(
                     color: colorScheme.error,
                     borderRadius: BorderRadius.circular(12),
@@ -131,7 +131,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
       );
     },
     child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
       child: Row(
         children: [
           CircleAvatar(
@@ -258,3 +258,5 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     );
   }
 }
+
+

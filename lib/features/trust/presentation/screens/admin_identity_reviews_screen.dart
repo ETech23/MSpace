@@ -76,17 +76,97 @@ final verificationWithDuplicateInfoProvider =
   }
 });
 
+class ReviewedLogFilters {
+  final String status;
+  final bool last7DaysOnly;
+  final String? adminId;
+  final String? userId;
+
+  const ReviewedLogFilters({
+    this.status = 'all',
+    this.last7DaysOnly = false,
+    this.adminId,
+    this.userId,
+  });
+
+  ReviewedLogFilters copyWith({
+    String? status,
+    bool? last7DaysOnly,
+    String? adminId,
+    String? userId,
+  }) {
+    return ReviewedLogFilters(
+      status: status ?? this.status,
+      last7DaysOnly: last7DaysOnly ?? this.last7DaysOnly,
+      adminId: adminId ?? this.adminId,
+      userId: userId ?? this.userId,
+    );
+  }
+}
+
+final reviewedLogFiltersProvider =
+    StateProvider<ReviewedLogFilters>((ref) => const ReviewedLogFilters());
+
+// Reviewed log provider (most recent reviewed verifications)
+final reviewedVerificationsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final supabase = Supabase.instance.client;
+  final filters = ref.watch(reviewedLogFiltersProvider);
+
+  var query = supabase
+      .from('identity_verifications')
+      .select('id, user_id, status, reviewed_at, reviewed_by, doc_type')
+      .not('reviewed_at', 'is', null);
+
+  final adminId = filters.adminId;
+  final userId = filters.userId;
+
+  if (filters.status != 'all') {
+    query = query.eq('status', filters.status);
+  }
+  if (filters.last7DaysOnly) {
+    final cutoff = DateTime.now().subtract(const Duration(days: 7)).toIso8601String();
+    query = query.gte('reviewed_at', cutoff);
+  }
+  if (adminId != null && adminId.isNotEmpty) {
+    query = query.eq('reviewed_by', adminId);
+  }
+  if (userId != null && userId.isNotEmpty) {
+    query = query.eq('user_id', userId);
+  }
+
+  final response = await query
+      .order('reviewed_at', ascending: false)
+      .limit(50);
+
+  return (response as List)
+      .cast<Map<String, dynamic>>();
+});
+
 class AdminIdentityReviewsScreen extends ConsumerWidget {
   const AdminIdentityReviewsScreen({super.key});
 
   Future<void> _approve(
+    BuildContext context,
     WidgetRef ref,
     IdentityVerificationEntity item,
   ) async {
     final repo = ref.read(trustRepositoryProvider);
-    await repo.adminReviewIdentityVerification(
+    final result = await repo.adminReviewIdentityVerification(
       verificationId: item.id,
       status: 'verified',
+    );
+    result.fold(
+      (failure) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Verification failed: ${failure.message}')),
+        );
+      },
+      (_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User verified successfully')),
+        );
+      },
     );
     ref.invalidate(adminIdentityQueueProvider);
   }
@@ -136,10 +216,22 @@ class AdminIdentityReviewsScreen extends ConsumerWidget {
     if (reason == null || reason.isEmpty) return;
 
     final repo = ref.read(trustRepositoryProvider);
-    await repo.adminReviewIdentityVerification(
+    final result = await repo.adminReviewIdentityVerification(
       verificationId: item.id,
       status: 'rejected',
       rejectionReason: reason,
+    );
+    result.fold(
+      (failure) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Rejection failed: ${failure.message}')),
+        );
+      },
+      (_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Verification rejected')),
+        );
+      },
     );
     ref.invalidate(adminIdentityQueueProvider);
   }
@@ -348,6 +440,238 @@ class AdminIdentityReviewsScreen extends ConsumerWidget {
     );
   }
 
+  void _showReviewedLogModal(
+    BuildContext context,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            child: Consumer(
+              builder: (context, ref, _) {
+                final reviewedAsync = ref.watch(reviewedVerificationsProvider);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.history, size: 28),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Reviewed Log',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: 'Filters',
+                          icon: const Icon(Icons.filter_list),
+                          onPressed: () => _showReviewedLogFilters(context),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: reviewedAsync.when(
+                        data: (reviewed) => ListView.separated(
+                          controller: scrollController,
+                          itemCount: reviewed.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final item = reviewed[index];
+                            final reviewedAt = DateTime.parse(
+                              item['reviewed_at'] as String,
+                            );
+                            final status = item['status'] as String? ?? 'unknown';
+                            final userId = item['user_id'] as String? ?? '';
+                            final docType = item['doc_type'] as String? ?? 'Document';
+
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(
+                                status == 'verified'
+                                    ? Icons.check_circle
+                                    : status == 'rejected'
+                                        ? Icons.cancel
+                                        : Icons.help,
+                                color: status == 'verified'
+                                    ? Colors.green
+                                    : status == 'rejected'
+                                        ? Colors.red
+                                        : Colors.grey,
+                                size: 20,
+                              ),
+                              title: Text(
+                                '${status.toUpperCase()} · ${userId.substring(0, 8)}...',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              subtitle: Text(
+                                '$docType · ${_formatDate(reviewedAt)}',
+                              ),
+                            );
+                          },
+                        ),
+                        loading: () => const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                        error: (err, _) => Center(
+                          child: Text(
+                            'Failed to load log: $err',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showReviewedLogFilters(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+          ),
+          child: Consumer(
+            builder: (context, ref, _) {
+              final filters = ref.watch(reviewedLogFiltersProvider);
+              final adminController = TextEditingController(text: filters.adminId ?? '');
+              final userController = TextEditingController(text: filters.userId ?? '');
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.filter_list),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Filters',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          ref.read(reviewedLogFiltersProvider.notifier).state =
+                              const ReviewedLogFilters();
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Reset'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Status'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('All'),
+                        selected: filters.status == 'all',
+                        onSelected: (_) => ref
+                            .read(reviewedLogFiltersProvider.notifier)
+                            .state = filters.copyWith(status: 'all'),
+                      ),
+                      ChoiceChip(
+                        label: const Text('Verified'),
+                        selected: filters.status == 'verified',
+                        onSelected: (_) => ref
+                            .read(reviewedLogFiltersProvider.notifier)
+                            .state = filters.copyWith(status: 'verified'),
+                      ),
+                      ChoiceChip(
+                        label: const Text('Rejected'),
+                        selected: filters.status == 'rejected',
+                        onSelected: (_) => ref
+                            .read(reviewedLogFiltersProvider.notifier)
+                            .state = filters.copyWith(status: 'rejected'),
+                      ),
+                      ChoiceChip(
+                        label: const Text('Pending'),
+                        selected: filters.status == 'pending',
+                        onSelected: (_) => ref
+                            .read(reviewedLogFiltersProvider.notifier)
+                            .state = filters.copyWith(status: 'pending'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Last 7 days only'),
+                    value: filters.last7DaysOnly,
+                    onChanged: (value) => ref
+                        .read(reviewedLogFiltersProvider.notifier)
+                        .state = filters.copyWith(last7DaysOnly: value),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: adminController,
+                    decoration: const InputDecoration(
+                      labelText: 'Admin ID (reviewed_by)',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) => ref
+                        .read(reviewedLogFiltersProvider.notifier)
+                        .state = filters.copyWith(adminId: value.trim()),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: userController,
+                    decoration: const InputDecoration(
+                      labelText: 'User ID',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) => ref
+                        .read(reviewedLogFiltersProvider.notifier)
+                        .state = filters.copyWith(userId: value.trim()),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Apply'),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data = ref.watch(adminIdentityQueueProvider);
@@ -358,6 +682,17 @@ class AdminIdentityReviewsScreen extends ConsumerWidget {
         title: const Text('Identity Reviews'),
         centerTitle: true,
         actions: [
+          Consumer(
+            builder: (context, ref, _) {
+              return IconButton(
+                tooltip: 'Reviewed Log',
+                icon: const Icon(Icons.history),
+                onPressed: () {
+                  _showReviewedLogModal(context);
+                },
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: () {
@@ -625,7 +960,7 @@ class AdminIdentityReviewsScreen extends ConsumerWidget {
                     icon: const Icon(Icons.history, size: 18),
                     label: Text('History (${history.length})'),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                     ),
                   ),
               ],
@@ -721,7 +1056,7 @@ class AdminIdentityReviewsScreen extends ConsumerWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: () => _approve(ref, item),
+                    onPressed: () => _approve(context, ref, item),
                     style: FilledButton.styleFrom(
                       backgroundColor: Colors.green,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -816,3 +1151,5 @@ class AdminIdentityReviewsScreen extends ConsumerWidget {
     );
   }
 }
+
+

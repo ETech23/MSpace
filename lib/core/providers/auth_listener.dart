@@ -22,7 +22,7 @@ final authListenerProvider = Provider<void>((ref) {
           name: user.userMetadata?['name'] ?? user.email?.split('@').first ?? 'User',
           phone: user.userMetadata?['phone'] as String?,
           photoUrl: user.userMetadata?['photo_url'] as String?,
-          userType: user.userMetadata?['role'] as String? ?? 'client',
+          userType: user.userMetadata?['role'] as String? ?? 'customer',
           createdAt: DateTime.parse(user.createdAt),
         ),
       );

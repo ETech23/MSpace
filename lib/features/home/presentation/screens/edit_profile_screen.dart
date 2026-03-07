@@ -9,6 +9,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../profile/domain/entities/profile_update_entity.dart';
 import '../../../profile/presentation/providers/profile_provider.dart';
 import '../../../profile/presentation/providers/artisan_profile_provider.dart';
+import '../../../trust/presentation/providers/verification_status_provider.dart';
 import 'dart:io';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
@@ -18,7 +19,8 @@ class EditProfileScreen extends ConsumerStatefulWidget {
   ConsumerState<EditProfileScreen> createState() => _EditProfileScreenState();
 }
 
-class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
+class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
+    with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   
   // Basic Info Controllers
@@ -47,6 +49,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   double? _latitude;
   double? _longitude;
   bool _isLoadingLocation = false;
+  bool _retryLocationOnResume = false;
   
   // Availability
   bool _isAvailable = true;
@@ -54,7 +57,17 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeControllers();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && _retryLocationOnResume) {
+      _retryLocationOnResume = false;
+      _getCurrentLocation();
+    }
   }
 
   void _initializeControllers() {
@@ -98,6 +111,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
@@ -142,7 +156,17 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        throw 'Location services are disabled';
+        await _openLocationSettingsAndRetry();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Device location is off. Turn it on and return to retry automatically.'),
+            ),
+          );
+        }
+        setState(() => _isLoadingLocation = false);
+        return;
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
@@ -154,7 +178,17 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       }
 
       if (permission == LocationPermission.deniedForever) {
-        throw 'Location permissions are permanently denied';
+        await _openAppSettingsAndRetry();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Location permission is permanently denied. Enable it in app settings.'),
+            ),
+          );
+        }
+        setState(() => _isLoadingLocation = false);
+        return;
       }
 
       Position position = await Geolocator.getCurrentPosition(
@@ -186,6 +220,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         );
       }
     }
+  }
+
+  Future<void> _openLocationSettingsAndRetry() async {
+    _retryLocationOnResume = true;
+    await Geolocator.openLocationSettings();
+  }
+
+  Future<void> _openAppSettingsAndRetry() async {
+    _retryLocationOnResume = true;
+    await Geolocator.openAppSettings();
   }
 
   void _addSkill() {
@@ -317,6 +361,22 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     final user = ref.watch(authProvider).user;
     final profileState = ref.watch(profileProvider);
     final isArtisan = user?.isArtisan ?? false;
+
+    final verificationDetailsAsync = user == null
+        ? const AsyncValue<Map<String, dynamic>?>.data(null)
+        : ref.watch(userVerificationDetailsProvider(user.id));
+    final isVerified = user == null
+        ? false
+        : ref.watch(userVerificationStatusProvider(user.id)).maybeWhen(
+              data: (value) => value,
+              orElse: () => false,
+            );
+    final verificationStatus = verificationDetailsAsync.maybeWhen(
+      data: (details) => details?['status'] as String?,
+      orElse: () => null,
+    );
+    final lockSensitiveFields =
+        isVerified || verificationStatus == 'pending';
     
     // Watch artisan profile state if user is artisan
     final artisanProfileState = isArtisan 
@@ -389,11 +449,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                       bottom: 0,
                       right: 0,
                       child: GestureDetector(
-                        onTap: _pickImage,
+                        onTap: lockSensitiveFields ? null : _pickImage,
                         child: Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: colorScheme.primary,
+                            color: lockSensitiveFields
+                                ? colorScheme.outline
+                                : colorScheme.primary,
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: colorScheme.surface,
@@ -410,7 +472,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           child: Icon(
                             Icons.camera_alt,
                             size: 22,
-                            color: colorScheme.onPrimary,
+                            color: lockSensitiveFields
+                                ? colorScheme.onSurfaceVariant
+                                : colorScheme.onPrimary,
                           ),
                         ),
                       ),
@@ -418,6 +482,22 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                   ],
                 ),
               ),
+
+              if (lockSensitiveFields) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: const Text(
+                    'Name and profile photo are locked while your verification is pending or approved.',
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 32),
 
@@ -430,6 +510,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 controller: _nameController,
                 label: 'Full Name *',
                 icon: Icons.person_outline,
+                enabled: !lockSensitiveFields,
+                readOnly: lockSensitiveFields,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Please enter your name';

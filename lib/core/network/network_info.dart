@@ -1,4 +1,5 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 
 abstract class NetworkInfo {
   Future<bool> get isConnected;
@@ -11,7 +12,17 @@ class NetworkInfoImpl implements NetworkInfo {
 
   @override
   Future<bool> get isConnected async {
-    final result = await connectivity.checkConnectivity();
-    return result != ConnectivityResult.none;
+    // On web, browser APIs and plugin signals can be inconsistent.
+    // Let the actual request determine reachability to avoid false negatives.
+    if (kIsWeb) return true;
+
+    final dynamic result = await connectivity.checkConnectivity();
+    if (result is ConnectivityResult) {
+      return result != ConnectivityResult.none;
+    }
+    if (result is List<ConnectivityResult>) {
+      return result.any((r) => r != ConnectivityResult.none);
+    }
+    return false;
   }
 }

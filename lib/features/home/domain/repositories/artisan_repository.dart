@@ -5,7 +5,12 @@ import '../../../../core/error/failures.dart';
 import '../entities/artisan_entity.dart';
 
 abstract class ArtisanRepository {
-  Future<Either<Failure, List<ArtisanEntity>>> getFeaturedArtisans({required int limit});
+  Future<Either<Failure, List<ArtisanEntity>>> getFeaturedArtisans({
+    required int limit,
+    double? latitude,
+    double? longitude,
+    bool nationwide = false,
+  });
 
   Future<Either<Failure, List<ArtisanEntity>>> getNearbyArtisans({
     required double latitude,

@@ -29,6 +29,19 @@ class JobRemoteDataSourceImpl implements JobRemoteDataSource {
     try {
       print('📝 Posting job for customer: $customerId');
       
+      final customerRow = await supabaseClient
+          .from('users')
+          .select('moderation_status')
+          .eq('id', customerId)
+          .maybeSingle();
+      final customerStatus =
+          (customerRow?['moderation_status'] as String?) ?? 'active';
+      if (customerStatus != 'active') {
+        throw const ServerException(
+          message: 'Your account is restricted from posting jobs at this time.',
+        );
+      }
+
       final jobData = <String, dynamic>{
         'customer_id': customerId,
         'title': form.title ?? '${form.category} Service',
@@ -63,6 +76,7 @@ class JobRemoteDataSourceImpl implements JobRemoteDataSource {
         latitude: form.latitude!,
         longitude: form.longitude!,
         category: form.category!,
+        serviceQuery: form.serviceQuery,
       ).catchError((e) {
         print('⚠️ Matching error (non-blocking): $e');
       });
@@ -162,15 +176,15 @@ Future<void> _matchArtisansToJob({
   required double latitude,
   required double longitude,
   required String category,
+  String? serviceQuery,
 }) async {
   try {
     print('🔍 Matching artisans for job: $jobId');
 
-    // Get nearby artisans
+    // Get available artisans, then filter by category + skills.
     final artisansResponse = await supabaseClient
         .from('artisan_profiles')
-        .select('user_id, rating, premium, verified, availability_status')
-        .eq('category', category)
+        .select('user_id, rating, premium, verified, availability_status, category, skills')
         .eq('availability_status', 'available');
 
     if ((artisansResponse as List).isEmpty) {
@@ -193,6 +207,32 @@ Future<void> _matchArtisansToJob({
         .map((a) => (a as Map<String, dynamic>)['user_id'] as String)
         .toList();
 
+    // Filter out suspended/blocked artisans
+    final statusRows = await supabaseClient
+        .from('users')
+        .select('id,moderation_status')
+        .inFilter('id', userIds);
+    final activeUserIds = <String>{};
+    for (final row in (statusRows as List)) {
+      final map = row as Map<String, dynamic>;
+      final status = (map['moderation_status'] as String?) ?? 'active';
+      if (status == 'active') {
+        activeUserIds.add(map['id'] as String);
+      }
+    }
+
+    if (activeUserIds.isEmpty) {
+      print('âš ï¸ No active artisans available for matching');
+      await supabaseClient
+          .from('jobs')
+          .update({
+            'status': 'pending',
+            'notified_artisan_count': 0,
+          })
+          .eq('id', jobId);
+      return;
+    }
+
     final usersResponse = await supabaseClient.rpc(
       'get_users_with_location',
       params: {'user_ids': userIds},
@@ -204,6 +244,16 @@ Future<void> _matchArtisansToJob({
     for (var artisan in (artisansResponse as List)) {
       final artisanMap = artisan as Map<String, dynamic>;
       final userId = artisanMap['user_id'] as String;
+      if (!activeUserIds.contains(userId)) {
+        continue;
+      }
+      if (!_artisanMatchesService(
+        artisanMap: artisanMap,
+        jobCategory: category,
+        serviceQuery: serviceQuery,
+      )) {
+        continue;
+      }
 
       final userList = (usersResponse as List);
       final matchesForUser = userList.where((u) => (u as Map<String, dynamic>)['id'] == userId);
@@ -302,6 +352,51 @@ Future<void> _matchArtisansToJob({
   }
 }
 
+bool _artisanMatchesService({
+  required Map<String, dynamic> artisanMap,
+  required String jobCategory,
+  String? serviceQuery,
+}) {
+  final artisanCategory =
+      (artisanMap['category'] as String? ?? '').toLowerCase().trim();
+  final category = jobCategory.toLowerCase().trim();
+  final query = (serviceQuery ?? '').toLowerCase().trim();
+
+  final skillsRaw = artisanMap['skills'];
+  final skills = (skillsRaw is List)
+      ? skillsRaw
+          .map((s) => s.toString().toLowerCase().trim())
+          .where((s) => s.isNotEmpty)
+          .toList()
+      : <String>[];
+
+  final categoryMatch = category.isNotEmpty &&
+      category != 'general' &&
+      (artisanCategory.contains(category) || category.contains(artisanCategory));
+
+  final queryCategoryMatch = query.isNotEmpty &&
+      (artisanCategory.contains(query) || query.contains(artisanCategory));
+
+  final tokens = _tokenizeServiceQuery(query.isNotEmpty ? query : category);
+  final skillMatch = tokens.any((token) {
+    for (final skill in skills) {
+      if (skill.contains(token) || token.contains(skill)) return true;
+    }
+    return false;
+  });
+
+  if (categoryMatch) return true;
+  return queryCategoryMatch || skillMatch;
+}
+
+List<String> _tokenizeServiceQuery(String value) {
+  return value
+      .split(RegExp(r'[^a-z0-9]+'))
+      .map((s) => s.trim())
+      .where((s) => s.length >= 3)
+      .toSet()
+      .toList();
+}
   // ✅ FIXED: Use dart:math for accurate calculations
   double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     const double earthRadius = 6371;
@@ -558,6 +653,18 @@ Future<JobModel> acceptJob(String jobId, String artisanId) async {
     print('✅ Artisan $artisanId attempting to accept job $jobId');
 
     // 1️⃣ Verify the job exists and is available
+    final userRow = await supabaseClient
+        .from('users')
+        .select('moderation_status')
+        .eq('id', artisanId)
+        .maybeSingle();
+    final status = (userRow?['moderation_status'] as String?) ?? 'active';
+    if (status != 'active') {
+      throw const ServerException(
+        message: 'Your account is restricted from accepting jobs.',
+      );
+    }
+
     final existingJob = await supabaseClient
         .from('jobs')
         .select()
@@ -685,3 +792,7 @@ Future<String> _createBookingFromJob(JobModel job, String artisanId) async {
     }
   }
 }
+
+
+
+

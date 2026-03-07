@@ -9,15 +9,10 @@ class SplashScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isInitialized = ref.watch(isAuthInitializedProvider);
-    final isAuthenticated = ref.watch(authProvider).isAuthenticated;
 
-    // Once initialized, navigate to appropriate screen
     if (isInitialized) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (context.mounted) {
-          // Already authenticated users stay on home
-          // New users stay on home (can browse as guest)
-          // The router will handle this automatically
           context.go('/home');
         }
       });

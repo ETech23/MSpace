@@ -3,6 +3,21 @@ import '../../../../core/di/injection_container.dart';
 import '../../domain/repositories/artisan_repository.dart';
 import '../../domain/entities/artisan_entity.dart';
 
+class HomeResolvedLocation {
+  final double latitude;
+  final double longitude;
+  final bool isApproximate;
+
+  const HomeResolvedLocation({
+    required this.latitude,
+    required this.longitude,
+    required this.isApproximate,
+  });
+}
+
+final homeResolvedLocationProvider =
+    StateProvider<HomeResolvedLocation?>((ref) => null);
+
 // Provider for repository
 final artisanRepositoryProvider = Provider<ArtisanRepository>(
   (ref) => getIt<ArtisanRepository>(),
@@ -68,16 +83,39 @@ class ArtisanState {
 // Notifier
 class ArtisanNotifier extends StateNotifier<ArtisanState> {
   final ArtisanRepository repository;
+  DateTime? _featuredFetchedAtUtc;
+  static const Duration _featuredTtl = Duration(minutes: 3);
 
   ArtisanNotifier(this.repository) : super(ArtisanState());
 
   // Search radiuses to try (in km): 10, 25, 50, 100, 200, 500
   static const List<double> searchRadiuses = [10, 25, 50, 100, 200, 500];
 
-  Future<void> loadFeaturedArtisans() async {
+  Future<void> loadFeaturedArtisans({
+    int limit = 10,
+    double? latitude,
+    double? longitude,
+    bool nationwide = false,
+    bool forceRefresh = false,
+  }) async {
+    final now = DateTime.now().toUtc();
+    final hasFreshCache = !forceRefresh &&
+        state.featuredArtisans.isNotEmpty &&
+        _featuredFetchedAtUtc != null &&
+        now.difference(_featuredFetchedAtUtc!) < _featuredTtl;
+
+    if (hasFreshCache) {
+      return;
+    }
+
     state = state.copyWith(isLoadingFeatured: true, error: null);
 
-    final result = await repository.getFeaturedArtisans(limit: 10);
+    final result = await repository.getFeaturedArtisans(
+      limit: limit,
+      latitude: latitude,
+      longitude: longitude,
+      nationwide: nationwide,
+    );
 
     result.fold(
       (failure) {
@@ -87,6 +125,7 @@ class ArtisanNotifier extends StateNotifier<ArtisanState> {
         );
       },
       (artisans) {
+        _featuredFetchedAtUtc = DateTime.now().toUtc();
         state = state.copyWith(
           featuredArtisans: artisans,
           isLoadingFeatured: false,
@@ -235,6 +274,153 @@ class ArtisanNotifier extends StateNotifier<ArtisanState> {
       );
     }
   }
+
+  Future<void> loadNationwideArtisans({
+    required double latitude,
+    required double longitude,
+    String? category,
+  }) async {
+    state = state.copyWith(
+      isLoadingNearby: true,
+      isSearchingWider: false,
+      error: null,
+      currentPage: 0,
+      searchMessage: 'Loading artisans nationwide...',
+    );
+
+    final result = await repository.getNearbyArtisans(
+      latitude: latitude,
+      longitude: longitude,
+      category: category,
+      radiusKm: 50000,
+      limit: 20,
+      offset: 0,
+    );
+
+    result.fold(
+      (failure) {
+        state = state.copyWith(
+          nearbyArtisans: [],
+          isLoadingNearby: false,
+          currentPage: 0,
+          hasMore: false,
+          currentSearchRadius: 50000,
+          searchMessage: 'Unable to load artisans nationwide',
+          error: failure.message,
+        );
+      },
+      (artisans) {
+        state = state.copyWith(
+          nearbyArtisans: artisans,
+          isLoadingNearby: false,
+          currentPage: 1,
+          hasMore: artisans.length >= 20,
+          currentSearchRadius: 50000,
+          searchMessage: 'Showing ${artisans.length} artisans nationwide',
+          error: null,
+        );
+      },
+    );
+  }
+
+  Future<void> resetNearbySearch({
+    required double latitude,
+    required double longitude,
+    String? category,
+  }) async {
+    await _loadNearbyAtRadius(
+      latitude: latitude,
+      longitude: longitude,
+      category: category,
+      radiusKm: searchRadiuses.first,
+      loadingMessage: 'Searching nearby artisans...',
+      resultMessageBuilder: (count, radiusKm) =>
+          count == 0 ? 'No artisans nearby yet' : 'Found $count artisans nearby',
+    );
+  }
+
+  Future<void> expandNearbySearch({
+    required double latitude,
+    required double longitude,
+    String? category,
+  }) async {
+    final current = state.currentSearchRadius ?? searchRadiuses.first;
+    double nextRadius = 50000;
+
+    for (final radius in searchRadiuses) {
+      if (radius > current) {
+        nextRadius = radius;
+        break;
+      }
+    }
+
+    await _loadNearbyAtRadius(
+      latitude: latitude,
+      longitude: longitude,
+      category: category,
+      radiusKm: nextRadius,
+      loadingMessage: nextRadius >= 50000
+          ? 'Searching nationwide...'
+          : 'Expanding search to ${nextRadius.toInt()}km...',
+      resultMessageBuilder: (count, radiusKm) => radiusKm >= 50000
+          ? 'Showing $count artisans nationwide'
+          : (count == 0
+              ? 'No artisans within ${radiusKm.toInt()}km yet'
+              : 'Found $count artisans within ${radiusKm.toInt()}km'),
+    );
+  }
+
+  Future<void> _loadNearbyAtRadius({
+    required double latitude,
+    required double longitude,
+    required double radiusKm,
+    required String loadingMessage,
+    required String Function(int count, double radiusKm) resultMessageBuilder,
+    String? category,
+  }) async {
+    state = state.copyWith(
+      isLoadingNearby: true,
+      isSearchingWider: radiusKm > searchRadiuses.first,
+      error: null,
+      currentPage: 0,
+      searchMessage: loadingMessage,
+    );
+
+    final result = await repository.getNearbyArtisans(
+      latitude: latitude,
+      longitude: longitude,
+      category: category,
+      radiusKm: radiusKm,
+      limit: 20,
+      offset: 0,
+    );
+
+    result.fold(
+      (failure) {
+        state = state.copyWith(
+          nearbyArtisans: [],
+          isLoadingNearby: false,
+          isSearchingWider: false,
+          hasMore: false,
+          currentSearchRadius: radiusKm,
+          searchMessage: 'Unable to load artisans',
+          error: failure.message,
+        );
+      },
+      (artisans) {
+        state = state.copyWith(
+          nearbyArtisans: artisans,
+          isLoadingNearby: false,
+          isSearchingWider: false,
+          currentPage: 1,
+          hasMore: artisans.length >= 20,
+          currentSearchRadius: radiusKm,
+          searchMessage: resultMessageBuilder(artisans.length, radiusKm),
+          error: null,
+        );
+      },
+    );
+  }
   
   Future<void> loadMoreArtisans({
     double? latitude,
@@ -280,9 +466,15 @@ class ArtisanNotifier extends StateNotifier<ArtisanState> {
     double? latitude,
     double? longitude,
     String? category,
+    bool nationwide = false,
   }) async {
     await Future.wait([
-      loadFeaturedArtisans(),
+      loadFeaturedArtisans(
+        latitude: latitude,
+        longitude: longitude,
+        nationwide: nationwide,
+        forceRefresh: true,
+      ),
       loadNearbyArtisans(
         latitude: latitude,
         longitude: longitude,

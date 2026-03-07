@@ -3,7 +3,6 @@
 // lib/core/services/realtime_service.dart
 // ================================================================
 
-import 'package:dartz/dartz.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RealtimeService {
@@ -98,7 +97,8 @@ class RealtimeService {
 
     return stream.map((rows) {
       return rows.where((row) {
-        if (row['is_active'] != true) return false;
+        final hasIsActive = row.containsKey('is_active');
+        if (hasIsActive && row['is_active'] != true) return false;
         if (category != null && row['category'] != category) return false;
         if (itemType != null && row['item_type'] != itemType) return false;
         return true;

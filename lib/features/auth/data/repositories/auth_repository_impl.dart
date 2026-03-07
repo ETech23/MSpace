@@ -3,15 +3,18 @@ import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/network/network_info.dart';
 import '../../domain/repositories/auth_repository.dart';
+import '../datasources/auth_local_datasource.dart';
 import '../datasources/auth_remote_datasource.dart';
 import '../models/user_model.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   final AuthRemoteDataSource remoteDataSource;
+  final AuthLocalDataSource localDataSource;
   final NetworkInfo networkInfo;
 
   AuthRepositoryImpl({
     required this.remoteDataSource,
+    required this.localDataSource,
     required this.networkInfo,
   });
 
@@ -26,6 +29,7 @@ class AuthRepositoryImpl implements AuthRepository {
           email: email,
           password: password,
         );
+        await localDataSource.cacheUser(user);
         return Right(user);
       } on ServerException catch (e) {
         return Left(ServerFailure(message: e.message));
@@ -57,6 +61,24 @@ class AuthRepositoryImpl implements AuthRepository {
           phone: phone,
           userType: userType,
         );
+        await localDataSource.cacheUser(user);
+        return Right(user);
+      } on ServerException catch (e) {
+        return Left(ServerFailure(message: e.message));
+      } catch (e) {
+        return Left(ServerFailure(message: 'Unexpected error: ${e.toString()}'));
+      }
+    } else {
+      return const Left(NetworkFailure());
+    }
+  }
+
+  @override
+  Future<Either<Failure, UserModel>> loginWithGoogle() async {
+    if (await networkInfo.isConnected) {
+      try {
+        final user = await remoteDataSource.loginWithGoogle();
+        await localDataSource.cacheUser(user);
         return Right(user);
       } on ServerException catch (e) {
         return Left(ServerFailure(message: e.message));
@@ -73,6 +95,7 @@ class AuthRepositoryImpl implements AuthRepository {
     if (await networkInfo.isConnected) {
       try {
         await remoteDataSource.logout();
+        await localDataSource.clearCachedUser();
         return const Right(null);
       } on ServerException catch (e) {
         return Left(ServerFailure(message: e.message));
@@ -89,13 +112,28 @@ class AuthRepositoryImpl implements AuthRepository {
     if (await networkInfo.isConnected) {
       try {
         final user = await remoteDataSource.getCurrentUser();
+        if (user != null) {
+          await localDataSource.cacheUser(user);
+        }
         return Right(user);
       } on ServerException catch (e) {
+        final cached = await localDataSource.getCachedUser();
+        if (cached != null) {
+          return Right(cached);
+        }
         return Left(ServerFailure(message: e.message));
       } catch (e) {
+        final cached = await localDataSource.getCachedUser();
+        if (cached != null) {
+          return Right(cached);
+        }
         return Left(ServerFailure(message: 'Unexpected error: ${e.toString()}'));
       }
     } else {
+      final cached = await localDataSource.getCachedUser();
+      if (cached != null) {
+        return Right(cached);
+      }
       return const Left(NetworkFailure());
     }
   }
@@ -103,9 +141,13 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<bool> isAuthenticated() async {
     try {
-      return await remoteDataSource.isAuthenticated();
+      final isAuth = await remoteDataSource.isAuthenticated();
+      if (isAuth) return true;
+      final cached = await localDataSource.getCachedUser();
+      return cached != null;
     } catch (e) {
-      return false;
+      final cached = await localDataSource.getCachedUser();
+      return cached != null;
     }
   }
 

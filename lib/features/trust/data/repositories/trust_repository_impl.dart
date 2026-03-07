@@ -10,6 +10,10 @@ import '../../domain/entities/identity_verification_entity.dart';
 import '../../domain/entities/dispute_entity.dart';
 import '../../domain/entities/report_entity.dart';
 import '../../domain/entities/blocked_user_entity.dart';
+import '../../domain/entities/dispute_message_entity.dart';
+import '../../domain/entities/dispute_event_entity.dart';
+import '../../domain/entities/admin_user_entity.dart';
+import '../../domain/entities/platform_analytics_entity.dart';
 import '../../domain/repositories/trust_repository.dart';
 import '../models/identity_verification_model.dart';
 import '../models/dispute_model.dart';
@@ -148,15 +152,31 @@ class TrustRepositoryImpl implements TrustRepository {
       final userId = verification['user_id'] as String;
       print('   User ID: $userId');
 
-      // Check if user is an artisan
-      final artisanCheck = await supabaseClient
-          .from('artisan_profiles')
-          .select('user_id')
-          .eq('user_id', userId)
-          .maybeSingle();
-      
-      final isArtisan = artisanCheck != null;
+      final shouldBeVerified = status == 'verified';
+
+      // Check if user is an artisan from source-of-truth users.user_type,
+      // then ensure artisan profile exists for artisan accounts.
+      final userRow = await supabaseClient
+          .from('users')
+          .select('user_type')
+          .eq('id', userId)
+          .single();
+
+      final isArtisan = (userRow['user_type'] as String?) == 'artisan';
       print('   User Type: ${isArtisan ? "ARTISAN" : "CUSTOMER"}');
+
+      if (isArtisan) {
+        final artisanProfile = await supabaseClient
+            .from('artisan_profiles')
+            .select('id')
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (artisanProfile == null) {
+          throw Exception(
+            'Verification sync failed: artisan profile not found for artisan user $userId.',
+          );
+        }
+      }
 
       // Update verification status in identity_verifications table
       await supabaseClient.from('identity_verifications').update({
@@ -167,52 +187,35 @@ class TrustRepositoryImpl implements TrustRepository {
       
       print('✅ Verification status updated in identity_verifications');
 
-      // ✅ UNIVERSAL UPDATE: Update users.verified for ALL users (artisans AND customers)
-      if (status == 'verified') {
-        print('🔄 Setting user as verified in users table...');
-        
+      // ✅ UNIVERSAL UPDATE: Keep users.verified and artisan_profiles.verified in sync.
+      if (status == 'verified' || status == 'rejected') {
+        print('🔄 Setting users.verified=$shouldBeVerified ...');
+
         final userUpdateResult = await supabaseClient
             .from('users')
-            .update({'verified': true})
+            .update({'verified': shouldBeVerified})
             .eq('id', userId)
-            .select();
-        
-        print('✅ Users table updated: ${userUpdateResult.length} rows');
-        
-        // Also update artisan_profiles if user is an artisan
-        if (isArtisan) {
-          print('🔄 Setting artisan profile as verified...');
-          
-          final artisanUpdateResult = await supabaseClient
-              .from('artisan_profiles')
-              .update({'verified': true})
-              .eq('user_id', userId)
-              .select();
-          
-          print('✅ Artisan profile updated: ${artisanUpdateResult.length} rows');
+            .select('id');
+
+        if ((userUpdateResult as List).isEmpty) {
+          throw Exception('Verification sync failed: users row was not updated for $userId.');
         }
-        
-      } else if (status == 'rejected') {
-        print('🔄 Removing verification from users table...');
-        
-        final userUpdateResult = await supabaseClient
-            .from('users')
-            .update({'verified': false})
-            .eq('id', userId)
-            .select();
-        
         print('✅ Users table updated: ${userUpdateResult.length} rows');
-        
-        // Also update artisan_profiles if user is an artisan
+
         if (isArtisan) {
-          print('🔄 Removing verification from artisan profile...');
-          
+          print('🔄 Setting artisan_profiles.verified=$shouldBeVerified ...');
+
           final artisanUpdateResult = await supabaseClient
               .from('artisan_profiles')
-              .update({'verified': false})
+              .update({'verified': shouldBeVerified})
               .eq('user_id', userId)
-              .select();
-          
+              .select('id');
+
+          if ((artisanUpdateResult as List).isEmpty) {
+            throw Exception(
+              'Verification sync failed: artisan profile was not updated for $userId.',
+            );
+          }
           print('✅ Artisan profile updated: ${artisanUpdateResult.length} rows');
         }
       }
@@ -227,7 +230,8 @@ class TrustRepositoryImpl implements TrustRepository {
       final userVerified = userCheck['verified'] as bool?;
       print('📊 Final verification status in users table: $userVerified');
       
-      if (status == 'verified' && userVerified != true) {
+      if ((status == 'verified' || status == 'rejected') &&
+          userVerified != shouldBeVerified) {
         print('❌ WARNING: Verification status not synced to users table!');
         throw Exception('Failed to sync verification status to users table');
       }
@@ -238,16 +242,14 @@ class TrustRepositoryImpl implements TrustRepository {
             .from('artisan_profiles')
             .select('verified')
             .eq('user_id', userId)
-            .maybeSingle();
-        
-        if (artisanCheckResult != null) {
-          final artisanVerified = artisanCheckResult['verified'] as bool?;
-          print('📊 Final verification status in artisan_profiles: $artisanVerified');
-          
-          if (status == 'verified' && artisanVerified != true) {
-            print('❌ WARNING: Verification status not synced to artisan_profiles!');
-            throw Exception('Failed to sync verification status to artisan_profiles');
-          }
+            .single();
+        final artisanVerified = artisanCheckResult['verified'] as bool?;
+        print('📊 Final verification status in artisan_profiles: $artisanVerified');
+
+        if ((status == 'verified' || status == 'rejected') &&
+            artisanVerified != shouldBeVerified) {
+          print('❌ WARNING: Verification status not synced to artisan_profiles!');
+          throw Exception('Failed to sync verification status to artisan_profiles');
         }
       }
 
@@ -317,6 +319,8 @@ class TrustRepositoryImpl implements TrustRepository {
           .select()
           .single();
 
+      final disputeId = response['id'] as String;
+
       print('✅ Dispute created successfully');
 
       // Mark booking as disputed for UI visibility
@@ -324,6 +328,18 @@ class TrustRepositoryImpl implements TrustRepository {
           .from('bookings')
           .update({'status': 'disputed', 'updated_at': DateTime.now().toIso8601String()})
           .eq('id', bookingId);
+
+      await _logDisputeEvent(
+        disputeId: disputeId,
+        actorId: ownerId,
+        eventType: 'opened',
+        note: reason,
+      );
+      await _notifyDisputeOpened(
+        disputeId: disputeId,
+        bookingId: bookingId,
+        openedBy: ownerId,
+      );
 
       return Right(DisputeModel.fromJson(
           Map<String, dynamic>.from(response)));
@@ -619,6 +635,476 @@ class TrustRepositoryImpl implements TrustRepository {
       return Right(blocked);
     } catch (e) {
       return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  // ---------------------------
+  // Dispute hearing
+  // ---------------------------
+  @override
+  Future<Either<Failure, List<DisputeMessageEntity>>> getDisputeMessages({
+    required String disputeId,
+  }) async {
+    try {
+      final response = await supabaseClient
+          .from('dispute_messages')
+          .select()
+          .eq('dispute_id', disputeId)
+          .order('created_at', ascending: true);
+
+      final items = (response as List).map((e) {
+        final row = Map<String, dynamic>.from(e as Map);
+        final evidence = row['evidence_urls'];
+        return DisputeMessageEntity(
+          id: row['id'] as String,
+          disputeId: row['dispute_id'] as String,
+          senderId: row['sender_id'] as String,
+          message: row['message'] as String,
+          evidenceUrls: evidence is List
+              ? evidence.map((x) => x.toString()).toList()
+              : const [],
+          createdAt: DateTime.parse(row['created_at'] as String),
+        );
+      }).toList(growable: false);
+
+      return Right(items);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, List<DisputeEventEntity>>> getDisputeEvents({
+    required String disputeId,
+  }) async {
+    try {
+      final response = await supabaseClient
+          .from('dispute_events')
+          .select()
+          .eq('dispute_id', disputeId)
+          .order('created_at', ascending: true);
+
+      final items = (response as List).map((e) {
+        final row = Map<String, dynamic>.from(e as Map);
+        return DisputeEventEntity(
+          id: row['id'] as String,
+          disputeId: row['dispute_id'] as String,
+          actorId: row['actor_id'] as String,
+          eventType: row['event_type'] as String,
+          note: row['note'] as String?,
+          createdAt: DateTime.parse(row['created_at'] as String),
+        );
+      }).toList(growable: false);
+
+      return Right(items);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> submitDisputeMessage({
+    required String disputeId,
+    required String senderId,
+    required String message,
+    List<String> evidenceFilePaths = const [],
+  }) async {
+    try {
+      final evidenceUrls = <String>[];
+      for (final path in evidenceFilePaths) {
+        final url = await _uploadImage(
+          bucket: 'dispute-evidence',
+          userId: senderId,
+          filePath: path,
+          prefix: 'hearing',
+        );
+        evidenceUrls.add(url);
+      }
+
+      await supabaseClient.from('dispute_messages').insert({
+        'dispute_id': disputeId,
+        'sender_id': senderId,
+        'message': message,
+        'evidence_urls': evidenceUrls,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      await _logDisputeEvent(
+        disputeId: disputeId,
+        actorId: senderId,
+        eventType: 'message_submitted',
+        note: message,
+      );
+      await _notifyDisputeUpdate(
+        disputeId: disputeId,
+        title: 'New dispute response',
+        body: 'A new response was submitted in a dispute hearing.',
+      );
+
+      return const Right(null);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> updateDisputeStatus({
+    required String disputeId,
+    required String actorId,
+    required String status,
+    String? note,
+  }) async {
+    try {
+      final normalizedStatus = _normalizeDisputeStatus(status);
+      await _updateDisputeStatusWithFallback(
+        disputeId: disputeId,
+        status: normalizedStatus,
+        note: note,
+      );
+
+      await _logDisputeEvent(
+        disputeId: disputeId,
+        actorId: actorId,
+        eventType: 'status_updated',
+        note: normalizedStatus,
+      );
+      await _notifyDisputeUpdate(
+        disputeId: disputeId,
+        title: 'Dispute status updated',
+        body: 'Dispute status changed to ${normalizedStatus.replaceAll('_', ' ')}.',
+      );
+
+      return const Right(null);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  String _normalizeDisputeStatus(String input) {
+    switch (input) {
+      case 'awaiting_respondent':
+      case 'opened':
+        return 'open';
+      case 'under_review':
+        return 'in_review';
+      default:
+        return input;
+    }
+  }
+
+  Future<void> _updateDisputeStatusWithFallback({
+    required String disputeId,
+    required String status,
+    String? note,
+  }) async {
+    final candidates = <String>[status];
+    if (status == 'open') {
+      candidates.add('opened');
+    } else if (status == 'in_review') {
+      candidates.add('under_review');
+    }
+
+    Object? lastError;
+    for (final candidate in candidates) {
+      try {
+        await supabaseClient.from('disputes').update({
+          'status': candidate,
+          'resolution_notes': note,
+          'resolved_at': candidate.startsWith('resolved')
+              ? DateTime.now().toIso8601String()
+              : null,
+        }).eq('id', disputeId);
+        return;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    throw lastError ?? Exception('Failed to update dispute status.');
+  }
+
+  // ---------------------------
+  // Admin user management and analytics
+  // ---------------------------
+  @override
+  Future<Either<Failure, List<AdminUserEntity>>> adminListUsers({
+    String? query,
+    String? moderationStatus,
+  }) async {
+    try {
+      var req = supabaseClient.from('users').select();
+      if (query != null && query.trim().isNotEmpty) {
+        final q = query.trim();
+        req = req.or('name.ilike.%$q%,email.ilike.%$q%');
+      }
+      if (moderationStatus != null && moderationStatus.isNotEmpty) {
+        req = req.eq('moderation_status', moderationStatus);
+      }
+
+      final response = await req.order('created_at', ascending: false).limit(200);
+      final users = (response as List).map((e) {
+        final row = Map<String, dynamic>.from(e as Map);
+        return AdminUserEntity(
+          id: row['id'] as String,
+          name: (row['name'] as String?) ?? 'Unknown',
+          email: (row['email'] as String?) ?? '',
+          userType: (row['user_type'] as String?) ?? 'customer',
+          verified: (row['verified'] as bool?) ?? false,
+          moderationStatus: (row['moderation_status'] as String?) ?? 'active',
+          createdAt: DateTime.tryParse(row['created_at']?.toString() ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0),
+        );
+      }).toList(growable: false);
+
+      return Right(users);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> adminSetUserModerationStatus({
+    required String targetUserId,
+    required String status,
+    required String reason,
+  }) async {
+    try {
+      final actor = supabaseClient.auth.currentUser;
+      if (actor == null) {
+        return Left(ServerFailure(message: 'Not authenticated.'));
+      }
+
+      await supabaseClient.from('users').update({
+        'moderation_status': status,
+      }).eq('id', targetUserId);
+
+      final shouldBeAvailable = status == 'active';
+      await supabaseClient.from('artisan_profiles').update({
+        'availability_status': shouldBeAvailable ? 'available' : 'unavailable',
+      }).eq('user_id', targetUserId);
+
+      await supabaseClient.from('user_moderation_actions').insert({
+        'target_user_id': targetUserId,
+        'actor_id': actor.id,
+        'action': status,
+        'reason': reason,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      final isRestricted = status == 'suspended' || status == 'blocked';
+      await supabaseClient.from('notifications').insert({
+        'user_id': targetUserId,
+        'title': 'Account status updated',
+        'body': isRestricted
+            ? 'Your account has been ${status.replaceAll('_', ' ')}. You can appeal this decision.'
+            : 'Your account status changed to ${status.replaceAll('_', ' ')}.',
+        'type': 'system',
+        'read': false,
+        'data': {
+          'action': isRestricted ? 'open_appeal' : 'open_notifications',
+          'type': 'moderation',
+          'subType': status,
+          'reason': reason,
+        },
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      return const Right(null);
+    } on PostgrestException catch (e) {
+      final message = e.message.toLowerCase();
+      if (e.code == '42501' || message.contains('permission denied')) {
+        return const Left(
+          ServerFailure(
+            message:
+                'Permission denied updating users. Run play_store_compliance.sql to add admin update policy on users.',
+          ),
+        );
+      }
+      if (message.contains('moderation_status')) {
+        return const Left(
+          ServerFailure(
+            message:
+                'users.moderation_status is missing. Run play_store_compliance.sql in Supabase.',
+          ),
+        );
+      }
+      return Left(ServerFailure(message: 'Database error: ${e.message}'));
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, PlatformAnalyticsEntity>> adminGetPlatformAnalytics() async {
+    try {
+      final totalUsersRes = await supabaseClient.from('users').select('id').count();
+      final totalArtisansRes = await supabaseClient
+          .from('users')
+          .select('id')
+          .eq('user_type', 'artisan')
+          .count();
+      final verifiedUsersRes = await supabaseClient
+          .from('users')
+          .select('id')
+          .eq('verified', true)
+          .count();
+      final openDisputesRes = await supabaseClient
+          .from('disputes')
+          .select('id')
+          .not('status', 'in', '(resolved_refund,resolved_release)')
+          .count();
+      final pendingReportsRes = await supabaseClient
+          .from('reports')
+          .select('id')
+          .eq('status', 'reported')
+          .count();
+
+      final startOfDay = DateTime.now()
+          .toLocal()
+          .copyWith(hour: 0, minute: 0, second: 0, millisecond: 0)
+          .toUtc()
+          .toIso8601String();
+      final bookingsTodayRes = await supabaseClient
+          .from('bookings')
+          .select('id')
+          .gte('created_at', startOfDay)
+          .count();
+
+      return Right(
+        PlatformAnalyticsEntity(
+          totalUsers: totalUsersRes.count,
+          totalArtisans: totalArtisansRes.count,
+          verifiedUsers: verifiedUsersRes.count,
+          openDisputes: openDisputesRes.count,
+          pendingReports: pendingReportsRes.count,
+          bookingsToday: bookingsTodayRes.count,
+        ),
+      );
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  Future<void> _logDisputeEvent({
+    required String disputeId,
+    required String actorId,
+    required String eventType,
+    String? note,
+  }) async {
+    await supabaseClient.from('dispute_events').insert({
+      'dispute_id': disputeId,
+      'actor_id': actorId,
+      'event_type': eventType,
+      'note': note,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<void> _notifyDisputeOpened({
+    required String disputeId,
+    required String bookingId,
+    required String openedBy,
+  }) async {
+    try {
+      final booking = await supabaseClient
+          .from('bookings')
+          .select('client_id,artisan_id')
+          .eq('id', bookingId)
+          .single();
+
+      final clientId = booking['client_id'] as String?;
+      final artisanId = booking['artisan_id'] as String?;
+      final recipientIds = <String>{
+        if (clientId != null) clientId,
+        if (artisanId != null) artisanId,
+      }..remove(openedBy);
+
+      for (final recipientId in recipientIds) {
+        await supabaseClient.from('notifications').insert({
+          'user_id': recipientId,
+          'title': 'Dispute opened',
+          'body': 'A dispute was opened for one of your bookings.',
+          'type': 'system',
+          'read': false,
+          'data': {
+            'action': 'open_booking',
+            'bookingId': bookingId,
+            'type': 'dispute',
+            'subType': 'opened',
+            'relatedId': disputeId,
+          },
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+
+      final admins = await supabaseClient
+          .from('users')
+          .select('id')
+          .eq('user_type', 'admin');
+      for (final admin in (admins as List)) {
+        final id = (admin as Map)['id']?.toString();
+        if (id == null) continue;
+        await supabaseClient.from('notifications').insert({
+          'user_id': id,
+          'title': 'New dispute opened',
+          'body': 'A new dispute requires moderation review.',
+          'type': 'system',
+          'read': false,
+          'data': {
+            'action': 'open_notifications',
+            'type': 'dispute',
+            'subType': 'admin_new_dispute',
+            'relatedId': disputeId,
+          },
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (_) {
+      // Non-fatal for dispute opening flow.
+    }
+  }
+
+  Future<void> _notifyDisputeUpdate({
+    required String disputeId,
+    required String title,
+    required String body,
+  }) async {
+    try {
+      final dispute = await supabaseClient
+          .from('disputes')
+          .select('booking_id')
+          .eq('id', disputeId)
+          .single();
+      final bookingId = dispute['booking_id'] as String;
+
+      final booking = await supabaseClient
+          .from('bookings')
+          .select('client_id,artisan_id')
+          .eq('id', bookingId)
+          .single();
+
+      final recipientIds = <String>{
+        if (booking['client_id'] != null) booking['client_id'] as String,
+        if (booking['artisan_id'] != null) booking['artisan_id'] as String,
+      };
+
+      for (final recipientId in recipientIds) {
+        await supabaseClient.from('notifications').insert({
+          'user_id': recipientId,
+          'title': title,
+          'body': body,
+          'type': 'system',
+          'read': false,
+          'data': {
+            'action': 'open_booking',
+            'bookingId': bookingId,
+            'type': 'dispute',
+            'relatedId': disputeId,
+          },
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (_) {
+      // Ignore notification failure.
     }
   }
 

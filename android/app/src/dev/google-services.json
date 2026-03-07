@@ -7,12 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:637970082188:android:32cf9b7ee752e85d444ea9",
+        "mobilesdk_app_id": "1:637970082188:android:bff038b9aa0f3f59444ea9",
         "android_client_info": {
-          "package_name": "com.example.artisan_marketplace"
+          "package_name": "com.mspace.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "637970082188-mdvq0881639hpne5ci3upglac0eej2qo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCb2BvS6Afzkg418J5xMNfaGQIVPICgx7Q"
@@ -20,18 +25,36 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "637970082188-mdvq0881639hpne5ci3upglac0eej2qo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:637970082188:android:5826df17b039c5a3444ea9",
+        "mobilesdk_app_id": "1:637970082188:android:281f1eb9fd13b38e444ea9",
         "android_client_info": {
-          "package_name": "com.example.artisan_marketplace_new"
+          "package_name": "com.mspace.app.dev"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "637970082188-p3agfb5vu12n1oqehnofc1nqkc4ts32f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mspace.app.dev",
+            "certificate_hash": "c79207e3bc8cac9b1a9ded503c2d0cd4e5d6b028"
+          }
+        },
+        {
+          "client_id": "637970082188-mdvq0881639hpne5ci3upglac0eej2qo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCb2BvS6Afzkg418J5xMNfaGQIVPICgx7Q"
@@ -39,26 +62,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:637970082188:android:09151c53b920c9ad444ea9",
-        "android_client_info": {
-          "package_name": "com.example.artisan_marketplace_new.dev"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCb2BvS6Afzkg418J5xMNfaGQIVPICgx7Q"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "637970082188-mdvq0881639hpne5ci3upglac0eej2qo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

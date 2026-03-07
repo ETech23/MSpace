@@ -4,7 +4,12 @@ import '../../../../core/error/exceptions.dart';
 import 'dart:math' show cos, sqrt, asin, sin;
 
 abstract class ArtisanRemoteDataSource {
-  Future<List<ArtisanModel>> getFeaturedArtisans({int limit = 10});
+  Future<List<ArtisanModel>> getFeaturedArtisans({
+    int limit = 10,
+    double? latitude,
+    double? longitude,
+    bool nationwide = false,
+  });
   
   Future<List<ArtisanModel>> getNearbyArtisans({
     required double latitude,
@@ -31,63 +36,78 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
   ArtisanRemoteDataSourceImpl({required this.supabaseClient});
 
   @override
-  Future<List<ArtisanModel>> getFeaturedArtisans({int limit = 10}) async {
+  Future<List<ArtisanModel>> getFeaturedArtisans({
+    int limit = 10,
+    double? latitude,
+    double? longitude,
+    bool nationwide = false,
+  }) async {
     try {
-      print('🌟 Fetching featured artisans...');
-      
-      final artisansResponse = await supabaseClient
-          .from('artisan_profiles')
-          .select('*')
-          .eq('premium', true)
-          .order('rating', ascending: false)
-          .limit(limit);
-
-      print('📊 Got ${(artisansResponse as List).length} premium artisan profiles');
-
-      if ((artisansResponse as List).isEmpty) {
-        return [];
-      }
-
-      final userIds = (artisansResponse as List)
-          .map((a) => (a as Map<String, dynamic>)['user_id'] as String)
-          .toSet()
-          .toList();
-
-      final usersResponse = await supabaseClient.rpc(
-        'get_users_with_location', 
-        params: {'user_ids': userIds}
+      final response = await supabaseClient.rpc(
+        'get_featured_artisans_v2',
+        params: {
+          'p_limit': limit,
+          'p_latitude': latitude,
+          'p_longitude': longitude,
+          'p_nationwide': nationwide,
+        },
       );
 
-      print('📊 Got ${(usersResponse as List).length} user records');
-
-      final usersMap = Map<String, Map<String, dynamic>>.fromEntries(
-        (usersResponse).map((u) {
-          final userMap = u as Map<String, dynamic>;
-          return MapEntry(userMap['id'] as String, userMap);
-        })
-      );
-
-      final mergedData = (artisansResponse as List).map((artisan) {
-        final artisanMap = artisan as Map<String, dynamic>;
-        final userId = artisanMap['user_id'] as String;
-        final user = usersMap[userId];
-        
-        return <String, dynamic>{
-          ...artisanMap,
-          'users': user,
-        };
-      }).toList();
-
-      print('✅ Merged data for ${mergedData.length} artisans');
-
-      return mergedData.map((json) => ArtisanModel.fromJson(json)).toList();
+      final rows = (response as List).cast<Map<String, dynamic>>();
+      if (rows.isEmpty) return [];
+      return rows.map(ArtisanModel.fromJson).toList();
     } on PostgrestException catch (e) {
-      print('❌ PostgrestException: ${e.message}');
+      // Fallback for environments that don't have the RPC deployed yet.
+      if ((e.code == '42883' || e.message.contains('get_featured_artisans_v2'))) {
+        return _getFeaturedArtisansLegacy(limit: limit);
+      }
       throw ServerException(message: e.message);
     } catch (e) {
-      print('❌ Error: $e');
       throw ServerException(message: 'Failed to load featured artisans: $e');
     }
+  }
+
+  Future<List<ArtisanModel>> _getFeaturedArtisansLegacy({int limit = 10}) async {
+    final artisansResponse = await supabaseClient
+        .from('artisan_profiles')
+        .select('*')
+        .eq('premium', true)
+        .order('rating', ascending: false)
+        .limit(limit);
+
+    final artisanRows = (artisansResponse as List).cast<Map<String, dynamic>>();
+    if (artisanRows.isEmpty) {
+      return [];
+    }
+
+    final userIds = artisanRows
+        .map((a) => a['user_id'] as String)
+        .toSet()
+        .toList();
+
+    final usersResponse = await supabaseClient.rpc(
+      'get_users_with_location',
+      params: {'user_ids': userIds},
+    );
+
+    final usersMap = Map<String, Map<String, dynamic>>.fromEntries(
+      (usersResponse as List).map((u) {
+        final userMap = u as Map<String, dynamic>;
+        return MapEntry(userMap['id'] as String, userMap);
+      }),
+    );
+
+    final mergedData = artisanRows.map((artisanMap) {
+      final userId = artisanMap['user_id'] as String;
+      final user = usersMap[userId];
+
+      return <String, dynamic>{
+        ...artisanMap,
+        'users': user,
+      };
+    }).toList();
+
+    return mergedData.map((json) => ArtisanModel.fromJson(json)).toList();
   }
 
   @override
@@ -119,7 +139,7 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
 
         print('📊 Database function returned: ${(response as List).length} artisans');
 
-        final responseList = response as List;
+        final responseList = response;
 
         if (responseList.isEmpty) {
           print('⚠️ No artisans found within ${radiusKm}km');

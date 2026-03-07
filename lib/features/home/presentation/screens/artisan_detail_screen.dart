@@ -5,6 +5,7 @@ import 'package:artisan_marketplace/features/trust/presentation/providers/verifi
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/artisan_entity.dart';
 import '../../data/datasources/artisan_remote_datasource.dart';
@@ -55,10 +56,12 @@ final artisanDetailProvider = FutureProvider.family<ArtisanEntity?, String>((ref
 
 class ArtisanDetailScreen extends ConsumerWidget {
   final String artisanId;
+  final ArtisanEntity? initialArtisan;
 
   const ArtisanDetailScreen({
     super.key,
     required this.artisanId,
+    this.initialArtisan,
   });
 
   // Add this method for starting conversation
@@ -141,7 +144,12 @@ class ArtisanDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       body: artisanAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () {
+          if (initialArtisan != null) {
+            return _buildLoadingSplash(context, initialArtisan!);
+          }
+          return const Center(child: CircularProgressIndicator());
+        },
         error: (error, stack) => Center(
           child: Padding(
             padding: const EdgeInsets.all(32),
@@ -300,9 +308,9 @@ Positioned(
                         child: const Icon(Icons.share, color: Colors.white),
                       ),
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Share feature coming soon!')),
-                        );
+                        final shareText = 'Check out ${artisan.name} on MSpace.'
+                            '${artisan.category.isNotEmpty ? ' ${artisan.category} artisan.' : ''}';
+                        Share.share(shareText);
                       },
                     ),
                     if (!isOwnProfile)
@@ -319,7 +327,7 @@ Positioned(
                           context.push('/report', extra: {
                             'targetType': 'user',
                             'targetId': artisanId,
-                            'targetLabel': artisan.name ?? 'Artisan',
+                            'targetLabel': artisan.name,
                           });
                         },
                       ),
@@ -344,6 +352,9 @@ Positioned(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const SizedBox(height: 16),
+                    Center(child: BannerAdWidget()),
+                    const SizedBox(height: 16),
                     // Header Info
                     Padding(
                       padding: const EdgeInsets.all(20),
@@ -722,8 +733,6 @@ Padding(
   ),
 ),
 
-                    const BannerAdWidget(),
-
                     const SizedBox(height: 100),
                   ],
                 ),
@@ -890,6 +899,100 @@ Padding(
     );
   }
 
+  Widget _buildLoadingSplash(BuildContext context, ArtisanEntity artisan) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return CustomScrollView(
+      slivers: [
+        SliverAppBar(
+          expandedHeight: 280,
+          pinned: true,
+          flexibleSpace: FlexibleSpaceBar(
+            background: Stack(
+              fit: StackFit.expand,
+              children: [
+                artisan.photoUrl != null
+                    ? Image.network(
+                        artisan.photoUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _buildImagePlaceholder(colorScheme),
+                      )
+                    : _buildImagePlaceholder(colorScheme),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withOpacity(0.55),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          leading: IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.arrow_back, color: Colors.white),
+            ),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  artisan.name,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  artisan.category,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Loading artisan details...',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildStatCard(
     BuildContext context,
     IconData icon,
@@ -971,3 +1074,4 @@ Padding(
     );
   }
 }
+

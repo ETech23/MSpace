@@ -13,59 +13,47 @@ import 'core/services/fcm_notification_service.dart';
 import 'package:camera/camera.dart';
 import 'core/providers/theme_provider.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'features/auth/presentation/providers/auth_provider.dart';
+import 'features/feed/presentation/providers/feed_provider.dart';
+import 'features/trust/presentation/screens/account_blocked_screen.dart';
+import 'core/widgets/offline_overlay.dart';
+import 'core/ads/ad_remote_config_service.dart';
+import 'core/config/feature_flags_service.dart';
+import 'core/widgets/app_maintenance_screen.dart';
 
 List<CameraDescription> cameras = [];
 
-// ✅ Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// ✅ Background message handler (MUST be top-level)
-// Simplified background handler - just log
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   print('📩 Background message received: ${message.notification?.title}');
-  // FCM automatically displays the notification - we don't need to do anything!
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  Object? bootError;
+  StackTrace? bootStackTrace;
 
-  // Register background message handler
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-  // Initialize Supabase
-  await SupabaseConfig.initialize();
-
-  // Initialize local notifications
-  if (!kIsWeb) {
-    try {
-      final notificationService = NotificationService();
-      await notificationService.initialize();
-      print('✅ Local notifications initialized');
-    } catch (e) {
-      print('❌ Notification init error: $e');
-    }
-  }
-
-  // Initialize cameras
   try {
-    cameras = await availableCameras();
-  } catch (e) {
-    print('Error initializing cameras: $e');
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    await SupabaseConfig.initialize();
+    await init();
+  } catch (e, st) {
+    bootError = e;
+    bootStackTrace = st;
+    debugPrint('❌ Pre-boot initialization failed: $e');
+    debugPrint(st.toString());
   }
 
-  // Initialize dependency injection
-  await init();
-
-  // google_mobile_ads does not implement web plugins.
-  if (!kIsWeb) {
-    await MobileAds.instance.initialize();
+  if (bootError != null) {
+    runApp(StartupFailureApp(error: bootError, stackTrace: bootStackTrace));
+    return;
   }
 
   runApp(
@@ -75,39 +63,159 @@ void main() async {
   );
 }
 
+class StartupFailureApp extends StatelessWidget {
+  final Object error;
+  final StackTrace? stackTrace;
+
+  const StartupFailureApp({super.key, required this.error, this.stackTrace});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFF10131A),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        color: Colors.redAccent, size: 56),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Startup failed',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'The app could not finish initialization. '
+                      'Please restart and check logs.',
+                      style: TextStyle(color: Colors.white70, height: 1.4),
+                    ),
+                    const SizedBox(height: 16),
+                    SelectableText(
+                      error.toString(),
+                      style: const TextStyle(
+                        color: Colors.amberAccent,
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
+                    ),
+                    if (stackTrace != null) ...[
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: SelectableText(
+                            stackTrace.toString(),
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ArtisanMarketplaceApp extends ConsumerStatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
-  
+
   const ArtisanMarketplaceApp({super.key, required this.navigatorKey});
 
   @override
-  ConsumerState<ArtisanMarketplaceApp> createState() => _ArtisanMarketplaceAppState();
+  ConsumerState<ArtisanMarketplaceApp> createState() =>
+      _ArtisanMarketplaceAppState();
 }
 
-class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
+class _ArtisanMarketplaceAppState
+    extends ConsumerState<ArtisanMarketplaceApp> {
   @override
   void initState() {
     super.initState();
+    _warmUpServices();
     _initializePushNotifications();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+        if (!mounted) return;
+        final router = ref.read(routerProvider);
+
+        // Only handle passwordRecovery — this is reliably triggered ONLY
+        // when the user taps the reset password deep link.
+        // We do NOT handle signedIn here because Supabase fires it on every
+        // session restore and token refresh, making it impossible to
+        // distinguish a fresh email confirmation from a regular app open.
+        // The email-confirmed screen is reached via the errorBuilder deep
+        // link intercept in app_router.dart instead.
+        if (data.event == AuthChangeEvent.passwordRecovery) {
+          router.go('/reset-password');
+        }
+      });
+    });
+  }
+
+  Future<void> _warmUpServices() async {
+    if (kIsWeb) return;
+
+    try {
+      final notificationService = NotificationService();
+      await notificationService.initialize();
+      print('✅ Local notifications initialized');
+    } catch (e) {
+      print('❌ Notification init error: $e');
+    }
+
+    try {
+      cameras = await availableCameras();
+    } catch (e) {
+      print('Error initializing cameras: $e');
+    }
+
+    try {
+      await MobileAds.instance.initialize();
+      await AdRemoteConfigService.instance.initialize();
+      await FeatureFlagsService.instance.initialize();
+    } catch (e) {
+      print('❌ Mobile ads init error: $e');
+    }
   }
 
   Future<void> _initializePushNotifications() async {
     await Future.delayed(const Duration(milliseconds: 500));
-    
+
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
       try {
         final fcmService = FCMNotificationService();
         await fcmService.initialize(user.id);
 
-        // Wire notification taps to app navigation
         fcmService.setNotificationHandler((data) {
           _handleNotificationNavigation(data);
         });
 
-        // Also wire local NotificationService taps
         final notificationService = NotificationService();
-        notificationService.setNotificationHandler(_handleNotificationNavigation);
+        notificationService
+            .setNotificationHandler(_handleNotificationNavigation);
 
         print('✅ FCM initialized for user: ${user.id}');
       } catch (e) {
@@ -120,11 +228,11 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
     final notificationService = NotificationService();
     final notification = message.notification;
     final data = message.data;
-    
+
     if (notification == null) return;
-    
+
     final type = data['type'] ?? 'system';
-    
+
     if (type == 'message') {
       await notificationService.sendMessageNotification(
         senderName: notification.title ?? 'New Message',
@@ -135,7 +243,7 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
     } else if (type == 'booking') {
       final subType = data['subType'] ?? '';
       final bookingId = data['bookingId'] ?? '';
-      
+
       switch (subType) {
         case 'created':
           await notificationService.sendBookingCreatedNotification(
@@ -184,7 +292,9 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
       final jobId = data['jobId'] ?? data['relatedId'] ?? '';
       final jobTitle = data['jobTitle'] ?? '';
       final customerName = data['customerName'] ?? '';
-      final distanceKm = (data['distanceKm'] is num) ? (data['distanceKm'] as num).toDouble() : 0.0;
+      final distanceKm = (data['distanceKm'] is num)
+          ? (data['distanceKm'] as num).toDouble()
+          : 0.0;
 
       if (subType == 'job_match') {
         await notificationService.sendJobMatchedNotification(
@@ -192,7 +302,9 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
           jobTitle: jobTitle,
           customerName: customerName,
           distanceKm: distanceKm,
-          matchScore: (data['matchScore'] is num) ? (data['matchScore'] as num).toDouble() : 0.0,
+          matchScore: (data['matchScore'] is num)
+              ? (data['matchScore'] as num).toDouble()
+              : 0.0,
         );
       } else {
         await notificationService.sendJobPostedNotification(
@@ -217,75 +329,88 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
     final router = ref.read(routerProvider);
     final action = data['action'] as String?;
 
-    // Detailed debug logs for notification navigation
     print('🔔 Notification tap payload: $data');
     print('🔔 Handling notification tap with action: $action');
 
     if (action == 'open_booking' && data['bookingId'] != null) {
-      final bookingId = data['bookingId'] as String;
-      print('🔀 Navigating to /bookings/$bookingId');
-      router.push('/bookings/$bookingId');
+      router.push('/bookings/${data['bookingId']}');
     } else if (action == 'open_chat' && data['conversationId'] != null) {
-      final conversationId = data['conversationId'] as String;
-      final senderId = data['senderId'] as String?;
-      print('🔀 Navigating to /chat/$conversationId (otherUserId=${senderId ?? ''})');
       router.push(
-        '/chat/$conversationId',
+        '/chat/${data['conversationId']}',
         extra: {
-          'otherUserId': senderId ?? '',
+          'otherUserId': data['senderId'] ?? '',
           'otherUserName': data['senderName'] ?? 'User',
           'otherUserPhotoUrl': data['senderPhotoUrl'],
         },
       );
     } else if (action == 'open_notifications') {
-      print('🔀 Navigating to /notifications');
+      router.push('/notifications');
+    } else if (action == 'open_appeal') {
       router.push('/notifications');
     } else if (action == 'open_job') {
-      // Handle job notifications (server sends subType and relatedId)
       final subType = data['subType'] as String? ?? '';
-      final relatedId = data['relatedId'] as String? ?? data['jobId'] as String?;
+      final relatedId =
+          data['relatedId'] as String? ?? data['jobId'] as String?;
 
       if (subType == 'job_match' || subType == 'new_job') {
-        print('🔀 Navigating to /artisan/job-matches (job_match/new_job)');
-        // For artisans, open the job matches screen
         router.push('/artisan/job-matches');
       } else if (relatedId != null && relatedId.isNotEmpty) {
-        print('🔀 Navigating to /jobs/$relatedId');
-        // For other job types, open the specific job
         router.push('/jobs/$relatedId');
       } else {
-        print('🔀 No valid job id found; falling back to /notifications');
         router.push('/notifications');
       }
     } else {
-      print('⚠️ Unknown notification action; opening notifications screen');
       router.push('/notifications');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(feedPreloadProvider);
+
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeModeProvider);
+    final moderationStatusAsync =
+        ref.watch(currentUserModerationStatusProvider);
+    final isBlocked = moderationStatusAsync.maybeWhen(
+      data: (status) => status == 'blocked',
+      orElse: () => false,
+    );
 
     return MaterialApp.router(
       title: 'MSpace',
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
+      builder: (context, child) {
+        return ValueListenableBuilder(
+          valueListenable: FeatureFlagsService.instance.flagsListenable,
+          builder: (context, flags, _) {
+            if (flags.maintenanceMode) {
+              return AppMaintenanceScreen(
+                message: flags.maintenanceMessage,
+                onRetry: () => FeatureFlagsService.instance.refresh(),
+              );
+            }
+            if (isBlocked) {
+              return const OfflineOverlay(child: AccountBlockedScreen());
+            }
+            return OfflineOverlay(
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
+        );
+      },
       theme: ThemeData(
-        // Modern blue gradient color scheme
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2196F3), // Primary blue
-          primary: const Color(0xFF1976D2), // Deep blue
-          secondary: const Color(0xFF42A5F5), // Light blue
-          tertiary: const Color(0xFF64B5F6), // Sky blue
+          seedColor: const Color(0xFF2196F3),
+          primary: const Color(0xFF1976D2),
+          secondary: const Color(0xFF42A5F5),
+          tertiary: const Color(0xFF64B5F6),
           surface: Colors.white,
-          background: const Color(0xFFF5F9FF), // Very light blue tint
+          background: const Color(0xFFF5F9FF),
           brightness: Brightness.light,
         ),
         useMaterial3: true,
-        
-        // Modern AppBar with gradient effect
         appBarTheme: AppBarTheme(
           centerTitle: false,
           elevation: 0,
@@ -293,12 +418,8 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
           foregroundColor: const Color(0xFF1565C0),
           surfaceTintColor: Colors.transparent,
           toolbarHeight: 64,
-          iconTheme: const IconThemeData(
-            color: Color(0xFF1565C0),
-          ),
-          actionsIconTheme: const IconThemeData(
-            color: Color(0xFF1565C0),
-          ),
+          iconTheme: const IconThemeData(color: Color(0xFF1565C0)),
+          actionsIconTheme: const IconThemeData(color: Color(0xFF1565C0)),
           titleTextStyle: const TextStyle(
             color: Color(0xFF1565C0),
             fontSize: 20,
@@ -306,8 +427,6 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
             letterSpacing: 0.15,
           ),
         ),
-        
-        // Elegant input fields with blue accents
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
@@ -315,41 +434,44 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFFE3F2FD), width: 1.5),
+            borderSide:
+                const BorderSide(color: Color(0xFFE3F2FD), width: 1.5),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFF2196F3), width: 2.5),
+            borderSide:
+                const BorderSide(color: Color(0xFF2196F3), width: 2.5),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFFEF5350), width: 1.5),
+            borderSide:
+                const BorderSide(color: Color(0xFFEF5350), width: 1.5),
           ),
           focusedErrorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFFEF5350), width: 2.5),
+            borderSide:
+                const BorderSide(color: Color(0xFFEF5350), width: 2.5),
           ),
           filled: true,
           fillColor: const Color(0xFFFAFDFF),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           hintStyle: TextStyle(
             color: Colors.grey[400],
             fontSize: 15,
             fontWeight: FontWeight.w400,
           ),
         ),
-        
-        // Modern gradient button
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             backgroundColor: const Color(0xFF2196F3),
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
             elevation: 0,
             shadowColor: Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+                borderRadius: BorderRadius.circular(16)),
             textStyle: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -357,16 +479,14 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
             ),
           ),
         ),
-        
-        // Outlined button with blue theme
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFF1976D2),
             side: const BorderSide(color: Color(0xFF2196F3), width: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+                borderRadius: BorderRadius.circular(16)),
             textStyle: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -374,30 +494,22 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
             ),
           ),
         ),
-        
-        // Elevated cards with subtle shadow
         cardTheme: CardThemeData(
           elevation: 2,
           shadowColor: const Color(0xFF1976D2).withOpacity(0.08),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
+              borderRadius: BorderRadius.circular(20)),
           color: Colors.white,
           surfaceTintColor: const Color(0xFFF5F9FF),
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         ),
-        
-        // Modern FAB
         floatingActionButtonTheme: FloatingActionButtonThemeData(
           backgroundColor: const Color(0xFF2196F3),
           foregroundColor: Colors.white,
           elevation: 6,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
+              borderRadius: BorderRadius.circular(18)),
         ),
-        
-        // Chip theme for tags/categories
         chipTheme: ChipThemeData(
           backgroundColor: const Color(0xFFE3F2FD),
           selectedColor: const Color(0xFF2196F3),
@@ -405,58 +517,42 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
             color: Color(0xFF1565C0),
             fontWeight: FontWeight.w500,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+              borderRadius: BorderRadius.circular(12)),
         ),
-        
-        // Bottom navigation with subtle elevation
         bottomNavigationBarTheme: const BottomNavigationBarThemeData(
           backgroundColor: Colors.white,
           selectedItemColor: Color(0xFF1976D2),
           unselectedItemColor: Color(0xFF90CAF9),
-          selectedLabelStyle: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 12,
-          ),
+          selectedLabelStyle:
+              TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
           type: BottomNavigationBarType.fixed,
           elevation: 8,
         ),
-        
-        // Dialog theme
         dialogTheme: DialogThemeData(
           backgroundColor: Colors.white,
           elevation: 8,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
+              borderRadius: BorderRadius.circular(24)),
         ),
-        
-        // Divider
         dividerTheme: DividerThemeData(
           color: const Color(0xFFE3F2FD),
           thickness: 1,
           space: 1,
         ),
-        
-        // Progress indicator
         progressIndicatorTheme: const ProgressIndicatorThemeData(
           color: Color(0xFF2196F3),
         ),
-        
         scaffoldBackgroundColor: const Color(0xFFF8FBFF),
-        
-        // List tile theme
         listTileTheme: const ListTileThemeData(
-          contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          contentPadding:
+              EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(12)),
-          ),
+              borderRadius: BorderRadius.all(Radius.circular(12))),
         ),
       ),
-      
-      // Dark theme with deep blue accents
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF42A5F5),
@@ -468,7 +564,6 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
-        
         appBarTheme: const AppBarTheme(
           centerTitle: false,
           elevation: 0,
@@ -483,7 +578,6 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
             letterSpacing: 0.15,
           ),
         ),
-        
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
@@ -491,34 +585,30 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFF1E3A5F), width: 1.5),
+            borderSide:
+                const BorderSide(color: Color(0xFF1E3A5F), width: 1.5),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFF42A5F5), width: 2.5),
+            borderSide:
+                const BorderSide(color: Color(0xFF42A5F5), width: 2.5),
           ),
           filled: true,
           fillColor: const Color(0xFF1A1F2E),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         ),
-        
         cardTheme: CardThemeData(
           elevation: 2,
           shadowColor: const Color(0xFF42A5F5).withOpacity(0.15),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
+              borderRadius: BorderRadius.circular(20)),
           color: const Color(0xFF1E1E2E),
           surfaceTintColor: const Color(0xFF1E3A5F),
         ),
-        
         scaffoldBackgroundColor: const Color(0xFF0D1117),
-        
-        dividerTheme: const DividerThemeData(
-          color: Color(0xFF1E3A5F),
-        ),
+        dividerTheme: const DividerThemeData(color: Color(0xFF1E3A5F)),
       ),
-      
       routerConfig: router,
     );
   }

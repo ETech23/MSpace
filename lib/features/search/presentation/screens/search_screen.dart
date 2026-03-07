@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../trust/presentation/providers/trust_provider.dart';
+import '../../../home/domain/entities/artisan_entity.dart';
 import '../providers/search_provider.dart';
 import '../widgets/search_result_card.dart';
 import '../widgets/search_filter_sheet.dart';
@@ -141,6 +144,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     
     // Watch the search state - this will rebuild when state changes
     final searchState = ref.watch(searchProvider);
+    final currentUser = ref.watch(authProvider).user;
+    final blockedUserIds = currentUser == null
+        ? <String>{}
+        : ref.watch(blockedUsersProvider(currentUser.id)).maybeWhen(
+              data: (items) => items.map((e) => e.blockedUserId).toSet(),
+              orElse: () => <String>{},
+            );
+    final visibleResults = searchState.results
+        .where((artisan) => !blockedUserIds.contains(artisan.userId))
+        .toList(growable: false);
     
     // Debug logging
     debugPrint('🖼 Build: query="${searchState.query}", results=${searchState.results.length}, loading=${searchState.isLoading}');
@@ -153,12 +166,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           child: Column(
             children: [
               _buildSearchHeader(theme, cs, searchState),
-              const BannerAdWidget(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+              BannerAdWidget(
+                padding: EdgeInsets.fromLTRB(6, 8, 16, 4),
               ),
               Expanded(
                 child: searchState.isSearching || searchState.query.isNotEmpty
-                    ? _buildSearchContent(theme, cs, searchState)
+                    ? _buildSearchContent(theme, cs, searchState, visibleResults)
                     : _buildDiscoveryView(theme, cs, searchState),
               ),
             ],
@@ -266,7 +279,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     final filters = searchState.filters;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(6, 8, 16, 0),
       child: Row(
         children: [
           if (filters.category != null)
@@ -412,7 +425,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  Widget _buildSearchContent(ThemeData theme, ColorScheme cs, SearchState searchState) {
+  Widget _buildSearchContent(
+    ThemeData theme,
+    ColorScheme cs,
+    SearchState searchState,
+    List<ArtisanEntity> visibleResults,
+  ) {
     // Show loading
     if (searchState.isLoading) {
       return const Center(
@@ -450,7 +468,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     }
 
     // Show empty state
-    if (searchState.results.isEmpty && searchState.query.isNotEmpty) {
+    if (visibleResults.isEmpty && searchState.query.isNotEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -477,25 +495,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       children: [
         // Results count header
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          padding: const EdgeInsets.fromLTRB(6, 8, 16, 4),
           child: Row(
             children: [
               Text(
-                '${searchState.results.length} result${searchState.results.length != 1 ? 's' : ''}'
+                '${visibleResults.length} result${visibleResults.length != 1 ? 's' : ''}'
                 '${searchState.searchDurationMs > 0 ? ' (${searchState.searchDurationMs}ms)' : ''}',
                 style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
               ),
             ],
           ),
         ),
-        // Results list
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: searchState.results.isEmpty
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            itemCount: visibleResults.isEmpty
                 ? 0
-                : searchState.results.length +
-                    (searchState.results.length / 2).floor(),
+                : visibleResults.length + (visibleResults.length / 2).floor(),
             itemBuilder: (context, index) {
               const adInterval = 2;
               final isAdIndex = (index + 1) % (adInterval + 1) == 0;
@@ -504,7 +520,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               }
 
               final artisanIndex = index - (index ~/ (adInterval + 1));
-              final artisan = searchState.results[artisanIndex];
+              final artisan = visibleResults[artisanIndex];
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: SearchResultCard(
@@ -523,3 +539,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 }
+
+
+
+
+

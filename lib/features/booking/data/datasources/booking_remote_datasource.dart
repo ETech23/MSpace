@@ -81,7 +81,46 @@ Future<BookingModel> createBooking({
 }) async {
   try {
     print('📝 Creating booking...');
+    final userRows = await client
+        .from('users')
+        .select('id,moderation_status')
+        .inFilter('id', [clientId, artisanId]);
+    final statusByUser = <String, String>{};
+    for (final row in (userRows as List)) {
+      final map = row as Map<String, dynamic>;
+      statusByUser[map['id'] as String] =
+          (map['moderation_status'] as String?) ?? 'active';
+    }
 
+    final clientStatus = statusByUser[clientId] ?? 'active';
+    if (clientStatus != 'active') {
+      throw const ServerException(
+        message: 'Your account is restricted from booking at this time.',
+      );
+    }
+
+    final artisanStatus = statusByUser[artisanId] ?? 'active';
+    if (artisanStatus != 'active') {
+      throw const ServerException(
+        message: 'This artisan is currently unavailable for bookings.',
+      );
+    }
+
+    final artisanProfile = await client
+        .from('artisan_profiles')
+        .select('availability_status')
+        .eq('id', artisanProfileId)
+        .maybeSingle();
+    if (artisanProfile == null) {
+      throw const ServerException(message: 'Artisan profile not found.');
+    }
+    final availabilityStatus =
+        (artisanProfile['availability_status'] as String?) ?? 'available';
+    if (availabilityStatus != 'available') {
+      throw const ServerException(
+        message: 'This artisan is currently unavailable for bookings.',
+      );
+    }
     final bookingData = {
       'client_id': clientId,
       'artisan_id': artisanId,
@@ -144,13 +183,11 @@ Future<BookingModel> createBooking({
 
       print('✅ Found ${(response as List).length} bookings');
 
-      final bookings = <BookingModel>[];
-      for (final bookingJson in response) {
-        final enrichedBooking = await _enrichBookingWithUserData(bookingJson);
-        bookings.add(BookingModel.fromJson(enrichedBooking));
-      }
-
-      return bookings;
+      final rows = (response as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(growable: false);
+      final enriched = await _enrichBookingsWithUserData(rows);
+      return enriched.map(BookingModel.fromJson).toList(growable: false);
     } on PostgrestException catch (e) {
       print('❌ Database error: ${e.message}');
       throw ServerException(message: e.message);
@@ -171,7 +208,10 @@ Future<BookingModel> createBooking({
           .eq('id', bookingId)
           .single();
 
-      final enrichedBooking = await _enrichBookingWithUserData(bookingResponse);
+      final enrichedList = await _enrichBookingsWithUserData([
+        Map<String, dynamic>.from(bookingResponse),
+      ]);
+      final enrichedBooking = enrichedList.first;
 
       print('✅ Booking found');
 
@@ -185,74 +225,91 @@ Future<BookingModel> createBooking({
     }
   }
 
-  Future<Map<String, dynamic>> _enrichBookingWithUserData(
-    Map<String, dynamic> booking,
+  Future<List<Map<String, dynamic>>> _enrichBookingsWithUserData(
+    List<Map<String, dynamic>> bookings,
   ) async {
     try {
-      final clientId = booking['client_id'] as String?;
-      final artisanId = booking['artisan_id'] as String?;
-      final artisanProfileId = booking['artisan_profile_id'] as String?;
+      if (bookings.isEmpty) return bookings;
 
-      if (clientId != null) {
-        try {
-          final clientData = await client
-              .from('users')
-              .select('name, email, phone, photo_url')
-              .eq('id', clientId)
-              .maybeSingle();
+      final clientIds = bookings
+          .map((b) => b['client_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList(growable: false);
+      final artisanIds = bookings
+          .map((b) => b['artisan_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList(growable: false);
+      final artisanProfileIds = bookings
+          .map((b) => b['artisan_profile_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList(growable: false);
 
-          if (clientData != null) {
-            booking['customer_name'] = clientData['name'];
-            booking['customer_email'] = clientData['email'];
-            booking['customer_phone'] = clientData['phone'];
-            booking['customer_photo_url'] = clientData['photo_url'];
-          }
-        } catch (e) {
-          print('⚠️ Could not fetch client data: $e');
+      final userIds = <String>{...clientIds, ...artisanIds}.toList(growable: false);
+
+      Map<String, Map<String, dynamic>> usersById = {};
+      Map<String, Map<String, dynamic>> profilesById = {};
+
+      if (userIds.isNotEmpty) {
+        final users = await client
+            .from('users')
+            .select('id,name,email,phone,photo_url')
+            .inFilter('id', userIds);
+        usersById = {
+          for (final row in (users as List))
+            (row as Map<String, dynamic>)['id'] as String:
+                Map<String, dynamic>.from(row as Map),
+        };
+      }
+
+      if (artisanProfileIds.isNotEmpty) {
+        final profiles = await client
+            .from('artisan_profiles')
+            .select('id,category,rating,reviews_count')
+            .inFilter('id', artisanProfileIds);
+        profilesById = {
+          for (final row in (profiles as List))
+            (row as Map<String, dynamic>)['id'] as String:
+                Map<String, dynamic>.from(row as Map),
+        };
+      }
+
+      for (final booking in bookings) {
+        final clientId = booking['client_id'] as String?;
+        final artisanId = booking['artisan_id'] as String?;
+        final artisanProfileId = booking['artisan_profile_id'] as String?;
+
+        final clientData = clientId == null ? null : usersById[clientId];
+        if (clientData != null) {
+          booking['customer_name'] = clientData['name'];
+          booking['customer_email'] = clientData['email'];
+          booking['customer_phone'] = clientData['phone'];
+          booking['customer_photo_url'] = clientData['photo_url'];
+        }
+
+        final artisanData = artisanId == null ? null : usersById[artisanId];
+        if (artisanData != null) {
+          booking['artisan_name'] = artisanData['name'];
+          booking['artisan_email'] = artisanData['email'];
+          booking['artisan_phone'] = artisanData['phone'];
+          booking['artisan_photo_url'] = artisanData['photo_url'];
+        }
+
+        final profileData =
+            artisanProfileId == null ? null : profilesById[artisanProfileId];
+        if (profileData != null) {
+          booking['artisan_category'] = profileData['category'];
+          booking['artisan_rating'] = profileData['rating'];
+          booking['artisan_review_count'] = profileData['reviews_count'];
         }
       }
 
-      if (artisanId != null) {
-        try {
-          final artisanData = await client
-              .from('users')
-              .select('name, email, phone, photo_url')
-              .eq('id', artisanId)
-              .maybeSingle();
-
-          if (artisanData != null) {
-            booking['artisan_name'] = artisanData['name'];
-            booking['artisan_email'] = artisanData['email'];
-            booking['artisan_phone'] = artisanData['phone'];
-            booking['artisan_photo_url'] = artisanData['photo_url'];
-          }
-        } catch (e) {
-          print('⚠️ Could not fetch artisan data: $e');
-        }
-      }
-
-      if (artisanProfileId != null) {
-        try {
-          final profileData = await client
-              .from('artisan_profiles')
-              .select('category, rating, reviews_count')
-              .eq('id', artisanProfileId)
-              .maybeSingle();
-
-          if (profileData != null) {
-            booking['artisan_category'] = profileData['category'];
-            booking['artisan_rating'] = profileData['rating'];
-            booking['artisan_review_count'] = profileData['reviews_count'];
-          }
-        } catch (e) {
-          print('⚠️ Could not fetch artisan profile: $e');
-        }
-      }
-
-      return booking;
+      return bookings;
     } catch (e) {
       print('⚠️ Error enriching booking data: $e');
-      return booking;
+      return bookings;
     }
   }
 
@@ -332,6 +389,33 @@ Future<BookingModel> createBooking({
 
 @override
 Future<void> acceptBooking(String bookingId) async {
+  // ✅ Check artisan moderation status before accepting
+  final bookingRow = await client
+      .from('bookings')
+      .select('artisan_id')
+      .eq('id', bookingId)
+      .maybeSingle();
+
+  if (bookingRow == null) {
+    throw const ServerException(message: 'Booking not found.');
+  }
+
+  final artisanId = bookingRow['artisan_id'] as String?;
+  if (artisanId != null) {
+    final userRow = await client
+        .from('users')
+        .select('moderation_status')
+        .eq('id', artisanId)
+        .maybeSingle();
+
+    final status = (userRow?['moderation_status'] as String?) ?? 'active';
+    if (status != 'active') {
+      throw const ServerException(
+        message: 'Your account is restricted from accepting bookings.',
+      );
+    }
+  }
+
   // ✅ Just update status - trigger will send notification
   await updateBookingStatus(
     bookingId: bookingId,
@@ -418,3 +502,4 @@ Future<void> rejectBooking({
     }
   }
 }
+

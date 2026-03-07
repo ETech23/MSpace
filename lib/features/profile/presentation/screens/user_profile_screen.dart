@@ -11,6 +11,7 @@ import '../../../../core/di/injection_container.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../trust/presentation/providers/verification_status_provider.dart';
+import '../../../trust/presentation/providers/trust_provider.dart';
 import '../../../../core/ads/ad_widgets.dart';
 
 class UserProfileScreen extends ConsumerStatefulWidget {
@@ -125,14 +126,98 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
   }
 }
 
+  Future<void> _toggleBlockUser({
+    required bool currentlyBlocked,
+  }) async {
+    final currentUser = ref.read(authProvider).user;
+    if (currentUser == null || currentUser.id == widget.userId) return;
+
+    final actionLabel = currentlyBlocked ? 'Unblock' : 'Block';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$actionLabel user?'),
+        content: Text(
+          currentlyBlocked
+              ? 'You will be able to interact with this user again.'
+              : 'You will no longer receive messages or see this user in filtered lists.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final notifier = ref.read(blockActionProvider.notifier);
+    final ok = currentlyBlocked
+        ? await notifier.unblockUser(
+            blockerId: currentUser.id,
+            blockedUserId: widget.userId,
+          )
+        : await notifier.blockUser(
+            blockerId: currentUser.id,
+            blockedUserId: widget.userId,
+            reason: 'blocked_from_profile',
+          );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? (currentlyBlocked ? 'User unblocked' : 'User blocked')
+              : (currentlyBlocked ? 'Failed to unblock user' : 'Failed to block user'),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final profileState = ref.watch(userProfileProvider);
+    final currentUser = ref.watch(authProvider).user;
+    final isOwnProfile = currentUser?.id == widget.userId;
+    final blockActionState = ref.watch(blockActionProvider);
+    final isBlocked = currentUser != null &&
+        ref.watch(blockedUsersProvider(currentUser.id)).maybeWhen(
+              data: (items) => items.any((e) => e.blockedUserId == widget.userId),
+              orElse: () => false,
+            );
     
     final userProfile = profileState.userProfile;
     final stats = profileState.stats;
+
+    if (isBlocked) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.userName ?? 'User Profile'),
+          actions: [
+            if (!isOwnProfile)
+              TextButton.icon(
+                onPressed: blockActionState.isLoading
+                    ? null
+                    : () => _toggleBlockUser(currentlyBlocked: true),
+                icon: const Icon(Icons.lock_open),
+                label: const Text('Unblock'),
+              ),
+          ],
+        ),
+        body: const Center(
+          child: Text('This user is blocked. Unblock to view profile.'),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -148,6 +233,27 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
             },
             tooltip: 'Refresh',
           ),
+          if (!isOwnProfile && currentUser != null)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'toggle_block') {
+                  _toggleBlockUser(currentlyBlocked: isBlocked);
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem<String>(
+                  value: 'toggle_block',
+                  enabled: !blockActionState.isLoading,
+                  child: Row(
+                    children: [
+                      Icon(isBlocked ? Icons.lock_open : Icons.block, size: 18),
+                      const SizedBox(width: 8),
+                      Text(isBlocked ? 'Unblock user' : 'Block user'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
       body: _buildBody(
@@ -235,7 +341,7 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
 
           _buildRatingSection(userProfile, theme, colorScheme, ref),
 
-          const BannerAdWidget(),
+          BannerAdWidget(),
           const SizedBox(height: 24),
           
           
@@ -388,7 +494,7 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
                     const SizedBox(height: 4),
                     // User Type Badge
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                       decoration: BoxDecoration(
                         color: widget.userType == 'artisan'
                             ? Colors.blue.withOpacity(0.2)
@@ -965,3 +1071,6 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
     );
   }
 }
+
+
+

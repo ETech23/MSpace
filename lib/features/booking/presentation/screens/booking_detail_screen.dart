@@ -3,8 +3,11 @@
 import 'package:artisan_marketplace/features/reviews/presentation/providers/review_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../profile/presentation/screens/user_profile_screen.dart'; 
@@ -32,6 +35,9 @@ class BookingDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
+  static const bool _enableInAppMaps =
+      bool.fromEnvironment('ENABLE_IN_APP_MAPS', defaultValue: true);
+
   final _rejectionReasonController = TextEditingController();
   final _cancellationReasonController = TextEditingController();
   String? _currentBookingId;
@@ -72,18 +78,108 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   }
 
   Future<void> _openMaps(double? lat, double? lng, String address) async {
-    if (lat != null && lng != null) {
-      final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } else {
+    final resolved = await _resolveMapCoordinates(
+      latitude: lat,
+      longitude: lng,
+      address: address,
+    );
+
+    if (resolved == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Location: $address')),
+          const SnackBar(content: Text('Unable to locate this booking on map.')),
         );
       }
+      return;
     }
+
+    if (resolved.approximate && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Showing approximate location.')),
+      );
+    }
+
+    if (!_enableInAppMaps) {
+      await _openExternalMaps(resolved.lat, resolved.lng, address);
+      return;
+    }
+
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _InAppLocationMapScreen(
+          latitude: resolved.lat,
+          longitude: resolved.lng,
+          address: address,
+          isApproximate: resolved.approximate,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openExternalMaps(double lat, double lng, String address) async {
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Location: $address')),
+      );
+    }
+  }
+
+  Future<({double lat, double lng, bool approximate})?> _resolveMapCoordinates({
+    required double? latitude,
+    required double? longitude,
+    required String address,
+  }) async {
+    final normalized = _normalizeCoordinates(latitude, longitude);
+    if (normalized != null) {
+      return (
+        lat: normalized.lat,
+        lng: normalized.lng,
+        approximate: normalized.approximate,
+      );
+    }
+
+    if (address.trim().isEmpty) return null;
+
+    try {
+      final locations = await locationFromAddress(address).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => <Location>[],
+      );
+      if (locations.isEmpty) return null;
+
+      final first = locations.first;
+      return (lat: first.latitude, lng: first.longitude, approximate: true);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  ({double lat, double lng, bool approximate})? _normalizeCoordinates(
+    double? latitude,
+    double? longitude,
+  ) {
+    if (latitude == null || longitude == null) return null;
+
+    bool inRange(double lat, double lng) =>
+        lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+
+    if (latitude == 0 && longitude == 0) return null;
+
+    if (inRange(latitude, longitude)) {
+      return (lat: latitude, lng: longitude, approximate: false);
+    }
+
+    if (inRange(longitude, latitude)) {
+      return (lat: longitude, lng: latitude, approximate: true);
+    }
+
+    return null;
   }
 
   void _navigateToUserProfile({
@@ -473,9 +569,11 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       body: Stack(
         children: [
           SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                Center(child: BannerAdWidget()),
+                const SizedBox(height: 8),
                 _buildStatusHeader(booking, theme, colorScheme),
                 _buildRoleIndicator(userRole, theme, colorScheme),
                 _buildUserInfoCard(
@@ -491,7 +589,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     
     // Step 2: Check if that user IS the artisan in this booking
     // (They might be viewing from different contexts)
-    final viewingUserType = (viewingUserId == booking.artisanId) ? 'artisan' : 'client';
+    final viewingUserType = (viewingUserId == booking.artisanId) ? 'artisan' : 'customer';
     
     _navigateToUserProfile(
       userId: viewingUserId,
@@ -513,7 +611,6 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                   _buildAdditionalNotes(booking, theme, colorScheme),
                 _buildDisputeSection(booking, theme, colorScheme),
                 _buildStatusTimeline(booking, theme, colorScheme),
-                const Center(child: BannerAdWidget()),
                 const SizedBox(height: 100),
               ],
             ),
@@ -558,8 +655,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     ColorScheme colorScheme,
   ) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.fromLTRB(6, 0, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       decoration: BoxDecoration(
         color: colorScheme.primaryContainer.withOpacity(0.5),
         borderRadius: BorderRadius.circular(8),
@@ -770,7 +867,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                     const SizedBox(height: 8),
                     // Privacy note - No phone number displayed
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                       decoration: BoxDecoration(
                         color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
                         borderRadius: BorderRadius.circular(8),
@@ -1157,6 +1254,17 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                     icon: const Icon(Icons.report_gmailerrorred),
                     label: const Text('Open Dispute'),
                   ),
+                )
+              else if (latest != null)
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => context.push(
+                      '/disputes/${latest.id}/hearing?bookingId=${booking.id}',
+                    ),
+                    icon: const Icon(Icons.gavel),
+                    label: const Text('View Dispute Hearing'),
+                  ),
                 ),
             ],
           );
@@ -1398,4 +1506,122 @@ class _ReviewActionBar extends ConsumerWidget {
     );
   }
 }
+
+class _InAppLocationMapScreen extends StatelessWidget {
+  final double latitude;
+  final double longitude;
+  final String address;
+  final bool isApproximate;
+
+  const _InAppLocationMapScreen({
+    required this.latitude,
+    required this.longitude,
+    required this.address,
+    this.isApproximate = false,
+  });
+
+  Future<void> _openExternalMap(BuildContext context) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude',
+    );
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open external maps app.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final marker = Marker(
+      point: LatLng(latitude, longitude),
+      width: 44,
+      height: 44,
+      child: const Icon(
+        Icons.location_on,
+        color: Colors.red,
+        size: 38,
+      ),
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Booking Location'),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: FlutterMap(
+              options: MapOptions(
+                initialCenter: LatLng(latitude, longitude),
+                initialZoom: 16,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.mspace.app',
+                ),
+                MarkerLayer(
+                  markers: [marker],
+                ),
+                if (isApproximate)
+                  CircleLayer(
+                    circles: [
+                      CircleMarker(
+                        point: LatLng(latitude, longitude),
+                        radius: 250,
+                        useRadiusInMeter: true,
+                        color: Colors.red.withOpacity(0.14),
+                        borderColor: Colors.red.withOpacity(0.6),
+                        borderStrokeWidth: 1.2,
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    address,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (isApproximate) ...[
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Approximate area based on available booking location data.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: () => _openExternalMap(context),
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('Open in external map'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+
 

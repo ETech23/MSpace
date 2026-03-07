@@ -28,7 +28,8 @@ class UserEntity extends Equatable {
   });
 
   bool get isArtisan => userType == 'artisan';
-  bool get isClient => userType == 'client';
+  bool get isClient => userType == 'client' || userType == 'customer';
+  bool get isCustomer => userType == 'customer' || userType == 'client';
 
   @override
   List<Object?> get props => [

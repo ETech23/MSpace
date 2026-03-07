@@ -5,6 +5,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/widgets/location_permission_nudge.dart';
 
 class LocationCaptureScreen extends ConsumerStatefulWidget {
   final String userId;
@@ -20,10 +21,14 @@ class LocationCaptureScreen extends ConsumerStatefulWidget {
   ConsumerState<LocationCaptureScreen> createState() => _LocationCaptureScreenState();
 }
 
-class _LocationCaptureScreenState extends ConsumerState<LocationCaptureScreen> {
+class _LocationCaptureScreenState extends ConsumerState<LocationCaptureScreen>
+    with WidgetsBindingObserver {
   final LocationService _locationService = LocationService();
   
   bool _isLoading = false;
+  bool _hasShownLocationSettingsNudge = false;
+  bool _isDetectingLocation = false;
+  bool _retryLocationOnResume = false;
   String? _locationStatus;
   Position? _currentPosition;
   String? _address;
@@ -33,16 +38,88 @@ class _LocationCaptureScreenState extends ConsumerState<LocationCaptureScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _detectLocation();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && _retryLocationOnResume) {
+      _retryLocationOnResume = false;
+      _hasShownLocationSettingsNudge = false;
+      _detectLocation();
+    }
+  }
+
   Future<void> _detectLocation() async {
+    if (_isDetectingLocation) return;
+    _isDetectingLocation = true;
+
     setState(() {
       _isLoading = true;
       _locationStatus = 'Detecting your location...';
     });
 
     try {
+      final serviceEnabled = await _locationService.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        await _showLocationSettingsNudge();
+        setState(() {
+          _isLoading = false;
+          _locationStatus = 'Device location is off';
+        });
+        return;
+      }
+
+      final permission = await _locationService.checkPermissionStatus();
+      if (permission == LocationPermission.denied) {
+        final hasRequested = await _locationService.hasRequestedLocationPermission();
+        if (!hasRequested && mounted) {
+          final shouldRequest = await _showLocationPermissionRationaleDialog();
+          if (shouldRequest == true) {
+            final result = await _locationService.requestPermissionOnce();
+            if (result != LocationPermission.always &&
+                result != LocationPermission.whileInUse) {
+              await _showPermissionSettingsNudge();
+              setState(() {
+                _isLoading = false;
+                _locationStatus = 'Location permission is off';
+              });
+              return;
+            }
+          } else {
+            setState(() {
+              _isLoading = false;
+              _locationStatus = 'Location permission is off';
+            });
+            return;
+          }
+        } else {
+          await _showPermissionSettingsNudge();
+          setState(() {
+            _isLoading = false;
+            _locationStatus = 'Location permission is off';
+          });
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        await _showPermissionSettingsNudge();
+        setState(() {
+          _isLoading = false;
+          _locationStatus = 'Location permission is permanently denied';
+        });
+        return;
+      }
+
       final position = await _locationService.getCurrentLocation();
       
       if (position != null) {
@@ -64,7 +141,53 @@ class _LocationCaptureScreenState extends ConsumerState<LocationCaptureScreen> {
         _isLoading = false;
         _locationStatus = 'Error: ${e.toString()}';
       });
+    } finally {
+      _isDetectingLocation = false;
     }
+  }
+
+  Future<bool?> _showLocationPermissionRationaleDialog() {
+    return LocationPermissionNudge.showRationaleDialog(
+      context,
+      title: 'Allow location access?',
+      message: widget.isArtisan
+          ? 'We use your location so clients can discover your services nearby.'
+          : 'We use your location to find artisans near you.',
+      primaryLabel: 'Allow',
+      secondaryLabel: 'Not now',
+    );
+  }
+
+  Future<void> _showLocationSettingsNudge() async {
+    if (!mounted || _hasShownLocationSettingsNudge) return;
+    _hasShownLocationSettingsNudge = true;
+    LocationPermissionNudge.showSettingsBanner(
+      context,
+      message:
+          'Device location is off. Turn it on in Settings to continue with location setup.',
+      onOpenSettings: _openLocationSettings,
+    );
+  }
+
+  Future<void> _showPermissionSettingsNudge() async {
+    if (!mounted || _hasShownLocationSettingsNudge) return;
+    _hasShownLocationSettingsNudge = true;
+    LocationPermissionNudge.showSettingsBanner(
+      context,
+      message:
+          'Location permission is off for this app. Enable it in app settings to continue.',
+      onOpenSettings: _openAppSettings,
+    );
+  }
+
+  Future<void> _openLocationSettings() async {
+    _retryLocationOnResume = true;
+    await _locationService.openLocationSettings();
+  }
+
+  Future<void> _openAppSettings() async {
+    _retryLocationOnResume = true;
+    await _locationService.openAppSettings();
   }
 
   Future<void> _getAddressFromPosition(Position position) async {

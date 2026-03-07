@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
 import '../models/user_model.dart';
-
 import '../../../../core/services/location_helper.dart';
-
-
 
 abstract class AuthRemoteDataSource {
   Future<UserModel> register({
@@ -28,7 +28,7 @@ abstract class AuthRemoteDataSource {
   Future<void> logout();
   Future<UserModel?> getCurrentUser();
   Future<bool> isAuthenticated();
-  
+
   Future<UserModel> updateProfile({
     required String userId,
     String? name,
@@ -53,142 +53,275 @@ abstract class AuthRemoteDataSource {
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   final SupabaseClient client;
 
-  AuthRemoteDataSourceImpl({required this.client, required Object supabaseClient});
+  AuthRemoteDataSourceImpl(
+      {required this.client, required Object supabaseClient});
 
-  @override
-Future<UserModel> register({
-  required String email,
-  required String password,
-  required String name,
-  required String phone,
-  required String userType,
-}) async {
-  try {
-    print('📝 Starting registration for: $email');
-    
-    // 1️⃣ Sign up with Supabase Auth
-    final authResponse = await client.auth.signUp(
-      email: email,
-      password: password,
-      data: {
-        'name': name,
-        'user_type': userType,
-      },
-    );
+  static const String _mobileAuthRedirect = String.fromEnvironment(
+    'AUTH_REDIRECT_MOBILE',
+    defaultValue: 'io.supabase.artisanmarketplace://login-callback/',
+  );
 
-    final user = authResponse.user;
-    if (user == null) throw const ServerException(message: 'Registration failed');
+  static const String _webAuthRedirect = String.fromEnvironment(
+    'AUTH_REDIRECT_WEB',
+    defaultValue: '',
+  );
 
-    final userId = user.id;
-    print('✅ Auth user created: $userId');
+  static const String _googleWebClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+    defaultValue: '',
+  );
 
-    // 2️⃣ Wait for trigger to create user record
-    await Future.delayed(const Duration(milliseconds: 1000));
-
-    // 3️⃣ Get current location using helper
-final locationData = await LocationHelper.getLocationData();
-final position = locationData['position'] as Position?;
-final address = locationData['address'] as String?;
-
-if (position != null) {
-  print('✅ Got location: (${position.latitude}, ${position.longitude})');
-  if (address != null) {
-    print('✅ Got address: $address');
+  String _resolveRedirectUrl() {
+    if (!kIsWeb) return _mobileAuthRedirect;
+    if (_webAuthRedirect.isNotEmpty) return _webAuthRedirect;
+    return Uri.base.origin;
   }
-} 
 
-    // 4️⃣ Create/update user with location data
-    final userData = <String, dynamic>{
-      'id': userId,
-      'name': name,
-      'email': email,
-      'user_type': userType,
-      'phone': phone,
-      'created_at': DateTime.now().toIso8601String(),
+  Future<Map<String, dynamic>> _buildLocationFields() async {
+    if (kIsWeb) return <String, dynamic>{};
+
+    final locationData = await LocationHelper.getLocationData();
+    final position = locationData['position'] as Position?;
+    final address = locationData['address'] as String?;
+
+    if (position == null) return <String, dynamic>{};
+
+    final fields = <String, dynamic>{
+      'latitude': position.latitude,
+      'longitude': position.longitude,
+      'location': 'POINT(${position.longitude} ${position.latitude})',
     };
 
-    // Add location if we got it
-    if (position != null) {
-      // Store latitude and longitude separately for easier querying
-      userData['latitude'] = position.latitude;
-      userData['longitude'] = position.longitude;
-      
-      // Also store as PostGIS point (some queries might need this)
-      userData['location'] = 'POINT(${position.longitude} ${position.latitude})';
-      print('✅ Saving location: lat=${position.latitude}, lng=${position.longitude}');
-    } else {
-      print('⚠️ No location data to save');
-    }
-    
     if (address != null && address.isNotEmpty) {
-      userData['address'] = address;
-      print('✅ Saving address: $address');
+      fields['address'] = address;
     }
 
-    // Upsert user data
-    try {
-      await client.from('users').upsert(userData);
-      print('✅ User data saved to database');
-    } catch (e) {
-      print('❌ Error saving user data: $e');
-      // Continue even if location save fails
-    }
-
-    // 5️⃣ If artisan, create artisan profile
-    if (userType == 'artisan') {
-      print('👷 Creating artisan profile...');
-      
-      try {
-        final existingProfile = await client
-            .from('artisan_profiles')
-            .select('id')
-            .eq('user_id', userId)
-            .maybeSingle();
-
-        if (existingProfile == null) {
-          final artisanData = <String, dynamic>{
-            'user_id': userId,
-            'category': 'General',
-            'availability_status': 'available',
-          };
-          
-          // Copy location to artisan profile if available
-          if (position != null) {
-            artisanData['latitude'] = position.latitude;
-            artisanData['longitude'] = position.longitude;
-            artisanData['location'] = 'POINT(${position.longitude} ${position.latitude})';
-          }
-          
-          await client.from('artisan_profiles').insert(artisanData);
-          print('✅ Artisan profile created with location');
-        }
-      } catch (e) {
-        print('⚠️ Error creating artisan profile: $e');
-        // Don't fail registration if profile creation fails
-      }
-    }
-
-    // 6️⃣ Fetch final user data
-    final userResponse = await client
-        .from('users')
-        .select()
-        .eq('id', userId)
-        .single();
-
-    print('✅ Registration complete');
-    return UserModel.fromJson(userResponse);
-    
-  } on AuthException catch (e) {
-    print('❌ Auth error: ${e.message}');
-    throw ServerException(message: e.message);
-  } on PostgrestException catch (e) {
-    print('❌ Database error: ${e.message}');
-    throw ServerException(message: e.message);
-  } catch (e) {
-    print('❌ Registration error: $e');
-    throw ServerException(message: 'Registration failed: ${e.toString()}');
+    return fields;
   }
-}
+
+  Future<UserModel> _getOrCreateOAuthUserProfile(User supabaseUser) async {
+    final userId = supabaseUser.id;
+    final existingProfile =
+        await client.from('users').select().eq('id', userId).maybeSingle();
+
+    if (existingProfile != null) {
+      final hasCoordinates = existingProfile['latitude'] != null &&
+          existingProfile['longitude'] != null;
+      if (!hasCoordinates) {
+        final locationFields = await _buildLocationFields();
+        if (locationFields.isNotEmpty) {
+          await client.from('users').update(locationFields).eq('id', userId);
+          final refreshed = await client
+              .from('users')
+              .select()
+              .eq('id', userId)
+              .single();
+          return UserModel.fromJson(refreshed);
+        }
+      }
+      return UserModel.fromJson(existingProfile);
+    }
+
+    final metadata = supabaseUser.userMetadata ?? <String, dynamic>{};
+    final created = <String, dynamic>{
+      'id': userId,
+      'email': supabaseUser.email ?? '',
+      'name': (metadata['full_name'] as String?) ??
+          (metadata['name'] as String?) ??
+          ((supabaseUser.email ?? 'User').split('@').first),
+      'user_type': 'customer',
+      'photo_url': metadata['avatar_url'],
+      'created_at': DateTime.now().toIso8601String(),
+    };
+    created.addAll(await _buildLocationFields());
+
+    await client.from('users').upsert(created);
+    return UserModel.fromJson(created);
+  }
+
+  @override
+  Future<UserModel> register({
+    required String email,
+    required String password,
+    required String name,
+    required String phone,
+    required String userType,
+  }) async {
+    try {
+      print('📝 Starting registration for: $email');
+
+      // 1️⃣ Sign up with Supabase Auth
+      final authResponse = await client.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'name': name,
+          'user_type': userType,
+        },
+      );
+
+      final user = authResponse.user;
+      if (user == null) {
+        throw const ServerException(message: 'Registration failed. Please try again.');
+      }
+
+      // Supabase returns the existing user silently when email is already
+      // registered (it does NOT throw an AuthException). Detect this by
+      // checking identities — a brand new user always has at least one identity.
+      // An existing user that was "re-signed-up" comes back with empty identities.
+      final identities = user.identities;
+      if (identities != null && identities.isEmpty) {
+        throw const ServerException(
+          message: 'An account with this email already exists. Please log in instead.',
+        );
+      }
+
+      final userId = user.id;
+      print('✅ Auth user created: $userId');
+
+      // 2️⃣ Wait for trigger to create user record
+      await Future.delayed(const Duration(milliseconds: 1000));
+
+      // 3️⃣ Get current location
+      final locationData = await LocationHelper.getLocationData();
+      final position = locationData['position'] as Position?;
+      final address = locationData['address'] as String?;
+
+      // 4️⃣ Build user record
+      final userData = <String, dynamic>{
+        'id': userId,
+        'name': name,
+        'email': email,
+        'user_type': userType,
+        'phone': phone,
+        'created_at': DateTime.now().toIso8601String(),
+      };
+
+      if (position != null) {
+        userData['latitude'] = position.latitude;
+        userData['longitude'] = position.longitude;
+        userData['location'] =
+            'POINT(${position.longitude} ${position.latitude})';
+      }
+
+      if (address != null && address.isNotEmpty) {
+        userData['address'] = address;
+      }
+
+      // 5️⃣ Upsert user data
+      try {
+        await client.from('users').upsert(userData);
+        print('✅ User data saved to database');
+      } catch (e) {
+        print('⚠️ Error saving user data: $e');
+        // Non-fatal — continue
+      }
+
+      // 6️⃣ Create artisan profile if needed
+      if (userType == 'artisan') {
+        try {
+          final existingProfile = await client
+              .from('artisan_profiles')
+              .select('id')
+              .eq('user_id', userId)
+              .maybeSingle();
+
+          if (existingProfile == null) {
+            final artisanData = <String, dynamic>{
+              'user_id': userId,
+              'category': 'General',
+              'availability_status': 'available',
+            };
+
+            if (position != null) {
+              artisanData['latitude'] = position.latitude;
+              artisanData['longitude'] = position.longitude;
+              artisanData['location'] =
+                  'POINT(${position.longitude} ${position.latitude})';
+            }
+
+            await client.from('artisan_profiles').insert(artisanData);
+            print('✅ Artisan profile created');
+          }
+        } catch (e) {
+          print('⚠️ Error creating artisan profile: $e');
+        }
+      }
+
+      // 7️⃣ Fetch final user data — use maybeSingle() to avoid coercion crash.
+      // With autoconfirm disabled, the user row may not exist yet if the
+      // trigger hasn't fired. Return a minimal UserModel in that case.
+      final userResponse = await client
+          .from('users')
+          .select()
+          .eq('id', userId)
+          .maybeSingle();
+
+      print('✅ Registration complete — awaiting email confirmation');
+
+      if (userResponse != null) {
+        return UserModel.fromJson(userResponse);
+      }
+
+      // Fallback: construct from what we know
+      return UserModel.fromJson(userData);
+    } on AuthException catch (e) {
+      print('❌ Auth error: ${e.message}');
+      // Map common Supabase auth error codes to friendly messages
+      final msg = _friendlyAuthError(e.message);
+      throw ServerException(message: msg);
+    } on PostgrestException catch (e) {
+      print('❌ Database error: ${e.message}');
+      throw ServerException(message: e.message);
+    } on ServerException {
+      rethrow;
+    } catch (e) {
+      print('❌ Registration error: $e');
+      if (e.toString().contains('SocketException') ||
+          e.toString().contains('Connection timed out') ||
+          e.toString().contains('Connection refused')) {
+        throw const ServerException(
+          message:
+              'Could not connect to the server. Please check your internet connection and try again.',
+        );
+      }
+      throw ServerException(message: 'Registration failed: ${e.toString()}');
+    }
+  }
+
+  /// Maps Supabase auth error messages to user-friendly equivalents.
+  String _friendlyAuthError(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('already registered') ||
+        lower.contains('already exists') ||
+        lower.contains('user already')) {
+      return 'An account with this email already exists. Please log in instead.';
+    }
+    if (lower.contains('email not confirmed') ||
+        lower.contains('not confirmed')) {
+      return 'Please confirm your email address before logging in. Check your inbox for the confirmation link.';
+    }
+    if (lower.contains('invalid login') ||
+        lower.contains('invalid credentials') ||
+        lower.contains('wrong password') ||
+        lower.contains('invalid password')) {
+      return 'Incorrect email or password. Please try again.';
+    }
+    if (lower.contains('password') && lower.contains('short')) {
+      return 'Password is too short. Please use at least 8 characters.';
+    }
+    if (lower.contains('invalid email')) {
+      return 'Please enter a valid email address.';
+    }
+    if (lower.contains('rate limit') || lower.contains('too many')) {
+      return 'Too many attempts. Please wait a moment and try again.';
+    }
+    if (lower.contains('user not found') || lower.contains('no user')) {
+      return 'No account found with this email. Please register first.';
+    }
+    return raw;
+  }
+
   @override
   Future<UserModel> login({
     required String email,
@@ -205,121 +338,190 @@ if (position != null) {
 
       final userId = user.id;
 
-      // ✅ Use maybeSingle() to avoid coercion errors
       final userResponse = await client
           .from('users')
           .select()
           .eq('id', userId)
           .maybeSingle();
 
-      // If user profile doesn't exist, create default
       if (userResponse == null) {
         final defaultUser = {
           'id': userId,
           'name': 'User',
           'email': email,
-          'user_type': 'customer',  // ✅ CHANGED from 'role' to 'user_type'
+          'user_type': 'customer',
           'created_at': DateTime.now().toIso8601String(),
         };
         await client.from('users').insert(defaultUser);
-
         return UserModel.fromJson(defaultUser);
       }
 
       return UserModel.fromJson(userResponse);
     } on AuthException catch (e) {
-      throw ServerException(message: e.message);
+      final msg = e.message.toLowerCase();
+
+      // Just show incorrect credentials — we cannot safely distinguish
+      // between wrong password and unconfirmed email without a server-side
+      // function. Previous attempts to detect this client-side caused
+      // confirmed users to be wrongly sent to the confirm email screen.
+      if (msg.contains('invalid login') ||
+          msg.contains('invalid credentials') ||
+          msg.contains('wrong password') ||
+          msg.contains('invalid password')) {
+        throw const ServerException(
+          message: 'Incorrect email or password. Please try again.',
+        );
+      }
+
+      throw ServerException(message: _friendlyAuthError(e.message));
     } on PostgrestException catch (e) {
       throw ServerException(message: e.message);
     } catch (e) {
+      if (e is ServerException) rethrow;
+      if (e.toString().contains('SocketException') ||
+          e.toString().contains('Connection timed out')) {
+        throw const ServerException(
+          message:
+              'Could not connect to the server. Please check your internet connection.',
+        );
+      }
       throw ServerException(message: 'Login failed: ${e.toString()}');
     }
   }
 
   @override
-Future<UserModel> loginWithGoogle() async {
-  try {
-    await client.auth.signInWithOAuth(
-      OAuthProvider.google,
-      redirectTo: 'io.supabase.artisanmarketplace://login-callback',
-    );
+  Future<UserModel> loginWithGoogle() async {
+    try {
+      if (!kIsWeb) {
+        if (_googleWebClientId.isEmpty) {
+          throw const ServerException(
+            message:
+                'Missing GOOGLE_WEB_CLIENT_ID. Pass your Google Web OAuth client ID via --dart-define=GOOGLE_WEB_CLIENT_ID=...',
+          );
+        }
 
-    // Wait for auth state to change
-    final session = await client.auth.onAuthStateChange.firstWhere(
-      (event) => event.session != null,
-    );
+        final googleSignIn = GoogleSignIn(
+          scopes: const ['email', 'profile'],
+          serverClientId: _googleWebClientId,
+        );
 
-    final supabaseUser = session.session!.user;
-    final userId = supabaseUser.id;
+        final googleUser = await googleSignIn.signIn();
+        if (googleUser == null) {
+          throw const ServerException(message: 'Google sign-in was canceled.');
+        }
 
-    // Fetch or create user profile
-    var userResponse = await client
-        .from('users')
-        .select()
-        .eq('id', userId)
-        .maybeSingle();
+        final googleAuth = await googleUser.authentication;
+        final idToken = googleAuth.idToken;
+        if (idToken == null || idToken.isEmpty) {
+          throw const ServerException(
+            message:
+                'Google sign-in failed: missing ID token. Ensure GOOGLE_WEB_CLIENT_ID is your Web OAuth client ID and your Android package/SHA are configured in Google Cloud.',
+          );
+        }
 
-    if (userResponse == null) {
-      final newUser = {
-        'id': userId,
-        'email': supabaseUser.email!,
-        'name': supabaseUser.userMetadata?['full_name'] ??
-            supabaseUser.email!.split('@')[0],
-        'role': 'client',
-        'photo_url': supabaseUser.userMetadata?['avatar_url'],
-      };
-      await client.from('users').insert(newUser);
-      return UserModel.fromJson(newUser);
+        await client.auth.signInWithIdToken(
+          provider: OAuthProvider.google,
+          idToken: idToken,
+          accessToken: googleAuth.accessToken,
+        );
+
+        final session = client.auth.currentSession;
+        if (session == null) {
+          throw const ServerException(
+            message: 'Google sign-in failed: session not created.',
+          );
+        }
+
+        return _getOrCreateOAuthUserProfile(session.user);
+      }
+
+      final redirectUrl = _resolveRedirectUrl();
+      await client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: redirectUrl,
+        queryParams: const {
+          'prompt': 'select_account',
+          'access_type': 'offline',
+        },
+        authScreenLaunchMode: LaunchMode.externalApplication,
+      );
+
+      final activeSession = client.auth.currentSession;
+      if (activeSession != null) {
+        return _getOrCreateOAuthUserProfile(activeSession.user);
+      }
+
+      final session = await client.auth.onAuthStateChange
+          .firstWhere((event) => event.session != null)
+          .timeout(const Duration(seconds: 90));
+
+      return _getOrCreateOAuthUserProfile(session.session!.user);
+    } on AuthException catch (e) {
+      throw ServerException(message: e.message);
+    } on PlatformException catch (e) {
+      final message = (e.message ?? '').toLowerCase();
+      final isGoogleConfigError = e.code == 'sign_in_failed' &&
+          (message.contains('apiexception: 10') ||
+              message.contains('developer_error'));
+      if (isGoogleConfigError) {
+        throw const ServerException(
+          message:
+              'Google sign-in is not configured correctly for this Android build (ApiException 10). Verify GOOGLE_WEB_CLIENT_ID, package name, and SHA-1/SHA-256 in Firebase/Google Cloud, then update Supabase Google provider client IDs.',
+        );
+      }
+      throw ServerException(message: 'Google login failed: ${e.message}');
+    } on TimeoutException {
+      throw const ServerException(
+        message: 'Google sign-in timed out. Please try again.',
+      );
+    } catch (e) {
+      throw ServerException(message: 'Google login failed: ${e.toString()}');
     }
-
-    return UserModel.fromJson(userResponse);
-  } on AuthException catch (e) {
-    throw ServerException(message: e.message);
-  } catch (e) {
-    throw ServerException(message: 'Google login failed: ${e.toString()}');
   }
-}
 
   @override
-Future<UserModel> loginWithApple() async {
-  try {
-    await client.auth.signInWithOAuth(
-      OAuthProvider.apple,
-      redirectTo: 'io.supabase.artisanmarketplace://login-callback',
-    );
+  Future<UserModel> loginWithApple() async {
+    try {
+      final redirectUrl = _resolveRedirectUrl();
 
-    final session = await client.auth.onAuthStateChange.firstWhere(
-      (event) => event.session != null,
-    );
+      await client.auth.signInWithOAuth(
+        OAuthProvider.apple,
+        redirectTo: redirectUrl,
+        authScreenLaunchMode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
+      );
 
-    final supabaseUser = session.session!.user;
-    final userId = supabaseUser.id;
+      final session = await client.auth.onAuthStateChange
+          .firstWhere((event) => event.session != null);
 
-    var userResponse = await client
-        .from('users')
-        .select()
-        .eq('id', userId)
-        .maybeSingle();
+      final supabaseUser = session.session!.user;
+      final userId = supabaseUser.id;
 
-    if (userResponse == null) {
-      final newUser = {
-        'id': userId,
-        'email': supabaseUser.email!,
-        'name': supabaseUser.userMetadata?['full_name'] ?? 'User',
-        'role': 'client',
-      };
-      await client.from('users').insert(newUser);
-      return UserModel.fromJson(newUser);
+      var userResponse = await client
+          .from('users')
+          .select()
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (userResponse == null) {
+        final newUser = {
+          'id': userId,
+          'email': supabaseUser.email!,
+          'name': supabaseUser.userMetadata?['full_name'] ?? 'User',
+          'user_type': 'customer',
+        };
+        await client.from('users').insert(newUser);
+        return UserModel.fromJson(newUser);
+      }
+
+      return UserModel.fromJson(userResponse);
+    } on AuthException catch (e) {
+      throw ServerException(message: e.message);
+    } catch (e) {
+      throw ServerException(message: 'Apple login failed: ${e.toString()}');
     }
-
-    return UserModel.fromJson(userResponse);
-  } on AuthException catch (e) {
-    throw ServerException(message: e.message);
-  } catch (e) {
-    throw ServerException(message: 'Apple login failed: ${e.toString()}');
   }
-}
-
 
   @override
   Future<void> logout() async {
@@ -330,7 +532,7 @@ Future<UserModel> loginWithApple() async {
     }
   }
 
-   @override
+  @override
   Future<UserModel?> getCurrentUser() async {
     try {
       final user = client.auth.currentUser;
@@ -340,15 +542,14 @@ Future<UserModel> loginWithApple() async {
           .from('users')
           .select()
           .eq('id', user.id)
-          .maybeSingle(); // ✅ safe
+          .maybeSingle();
 
-      // If profile missing, create default
       if (userResponse == null) {
         final defaultUser = {
           'id': user.id,
           'name': 'User',
           'email': user.email ?? '',
-          'role': 'client',
+          'user_type': 'customer',
         };
         await client.from('users').insert(defaultUser);
         return UserModel.fromJson(defaultUser);
@@ -385,8 +586,7 @@ Future<UserModel> loginWithApple() async {
       if (name != null) updateData['name'] = name;
       if (phone != null) updateData['phone'] = phone;
       if (address != null) updateData['address'] = address;
-      
-      // Handle PostGIS point format
+
       if (latitude != null && longitude != null) {
         updateData['location'] = 'POINT($longitude $latitude)';
       }
@@ -403,7 +603,8 @@ Future<UserModel> loginWithApple() async {
     } on PostgrestException catch (e) {
       throw ServerException(message: e.message);
     } catch (e) {
-      throw ServerException(message: 'Profile update failed: ${e.toString()}');
+      throw ServerException(
+          message: 'Profile update failed: ${e.toString()}');
     }
   }
 
@@ -413,30 +614,28 @@ Future<UserModel> loginWithApple() async {
     required String filePath,
   }) async {
     try {
-      final fileName = '$userId/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      
+      final fileName =
+          '$userId/${DateTime.now().millisecondsSinceEpoch}.jpg';
+
       await client.storage.from('profile-images').upload(
             fileName,
             File(filePath),
-            fileOptions: const FileOptions(
-              upsert: true,
-            ),
+            fileOptions: const FileOptions(upsert: true),
           );
 
-      final publicUrl = client.storage
-          .from('profile-images')
-          .getPublicUrl(fileName);
+      final publicUrl =
+          client.storage.from('profile-images').getPublicUrl(fileName);
 
-      // Update user profile with new photo URL
-      await client.from('users').update({
-        'photo_url': publicUrl,
-      }).eq('id', userId);
+      await client
+          .from('users')
+          .update({'photo_url': publicUrl}).eq('id', userId);
 
       return publicUrl;
     } on StorageException catch (e) {
       throw ServerException(message: e.message);
     } catch (e) {
-      throw ServerException(message: 'Photo upload failed: ${e.toString()}');
+      throw ServerException(
+          message: 'Photo upload failed: ${e.toString()}');
     }
   }
 
@@ -453,12 +652,11 @@ Future<UserModel> loginWithApple() async {
           .maybeSingle();
 
       if (userResponse == null) {
-        // create default profile if missing
         final defaultUser = {
           'id': user.id,
           'name': 'User',
           'email': user.email ?? '',
-          'role': 'client',
+          'user_type': 'customer',
         };
         await client.from('users').insert(defaultUser);
         return UserModel.fromJson(defaultUser);
@@ -469,127 +667,116 @@ Future<UserModel> loginWithApple() async {
   }
 
   @override
-Future<void> updateUserType(String userId, String newType) async {
-  try {
-    print('📝 Updating user type to: $newType for user: $userId');
-    
-    await client.from('users').update({
-      'user_type': newType,
-    }).eq('id', userId);
-    
-    print('✅ User type updated successfully');
-  } on PostgrestException catch (e) {
-    print('❌ Database error updating user type: ${e.message}');
-    throw ServerException(message: e.message);
-  } catch (e) {
-    print('❌ Error updating user type: $e');
-    throw ServerException(message: 'Failed to update user type: ${e.toString()}');
-  }
-}
-
-@override
-Future<void> createArtisanProfileIfNeeded(String userId) async {
-  try {
-    print('👷 Checking if artisan profile exists for user: $userId');
-    
-    // Check if artisan profile already exists
-    final existingProfile = await client
-        .from('artisan_profiles')
-        .select('id')
-        .eq('user_id', userId)
-        .maybeSingle();
-    
-    if (existingProfile != null) {
-      print('⏭️  Artisan profile already exists');
-      return;
-    }
-    
-    print('📝 Creating new artisan profile...');
-    
-    // Get user's location data
-    final userData = await client
-        .from('users')
-        .select('latitude, longitude, location, address')
-        .eq('id', userId)
-        .single();
-    
-    // Create artisan profile with location data
-    final artisanData = <String, dynamic>{
-      'user_id': userId,
-      'category': 'General',
-      'availability_status': 'available',
-      'rating': 0.0,
-      'reviews_count': 0,
-      'verified': false,
-      'premium': false,
-      'completed_jobs': 0,
-    };
-    
-    // Copy location data if available
-    if (userData['latitude'] != null && userData['longitude'] != null) {
-      artisanData['latitude'] = userData['latitude'];
-      artisanData['longitude'] = userData['longitude'];
-      artisanData['location'] = userData['location'];
-    }
-    
-    if (userData['address'] != null) {
-      artisanData['address'] = userData['address'];
-    }
-    
-    await client.from('artisan_profiles').insert(artisanData);
-    
-    print('✅ Artisan profile created successfully');
-  } on PostgrestException catch (e) {
-    print('❌ Database error creating artisan profile: ${e.message}');
-    throw ServerException(message: e.message);
-  } catch (e) {
-    print('❌ Error creating artisan profile: $e');
-    throw ServerException(message: 'Failed to create artisan profile: ${e.toString()}');
-  }
-}
-
-@override
-Future<void> requestAccountDeletion({required String reason}) async {
-  try {
-    final user = client.auth.currentUser;
-    if (user == null) {
-      throw const ServerException(message: 'No authenticated user found.');
-    }
-
-    // Preferred path: backend function can hard-delete auth user and related data.
+  Future<void> updateUserType(String userId, String newType) async {
     try {
-      final response = await client.functions.invoke(
-        'delete-account',
-        body: {
-          'reason': reason,
-        },
-      );
+      await client
+          .from('users')
+          .update({'user_type': newType}).eq('id', userId);
+    } on PostgrestException catch (e) {
+      throw ServerException(message: e.message);
+    } catch (e) {
+      throw ServerException(
+          message: 'Failed to update user type: ${e.toString()}');
+    }
+  }
 
-      if (response.status >= 200 && response.status < 300) {
-        await client.auth.signOut();
+  @override
+  Future<void> createArtisanProfileIfNeeded(String userId) async {
+    try {
+      final userData = await client
+          .from('users')
+          .select('latitude, longitude, location, address, verified')
+          .eq('id', userId)
+          .single();
+
+      final userVerified = (userData['verified'] as bool?) ?? false;
+
+      final existingProfile = await client
+          .from('artisan_profiles')
+          .select('id,verified')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (existingProfile != null) {
+        final artisanVerified = (existingProfile['verified'] as bool?) ?? false;
+        if (artisanVerified != userVerified) {
+          await client
+              .from('artisan_profiles')
+              .update({'verified': userVerified})
+              .eq('user_id', userId);
+        }
         return;
       }
-    } catch (_) {
-      // Fall back to request queue below if edge function is not deployed.
+
+      final artisanData = <String, dynamic>{
+        'user_id': userId,
+        'category': 'General',
+        'availability_status': 'available',
+        'rating': 0.0,
+        'reviews_count': 0,
+        'verified': userVerified,
+        'premium': false,
+        'completed_jobs': 0,
+      };
+
+      if (userData['latitude'] != null && userData['longitude'] != null) {
+        artisanData['latitude'] = userData['latitude'];
+        artisanData['longitude'] = userData['longitude'];
+        artisanData['location'] = userData['location'];
+      }
+
+      if (userData['address'] != null) {
+        artisanData['address'] = userData['address'];
+      }
+
+      await client.from('artisan_profiles').insert(artisanData);
+    } on PostgrestException catch (e) {
+      throw ServerException(message: e.message);
+    } catch (e) {
+      throw ServerException(
+          message: 'Failed to create artisan profile: ${e.toString()}');
     }
-
-    // Fallback path: queue deletion request for backend processing.
-    await client.from('account_deletion_requests').upsert({
-      'user_id': user.id,
-      'reason': reason,
-      'status': 'pending',
-      'requested_at': DateTime.now().toIso8601String(),
-    }, onConflict: 'user_id');
-
-    await client.auth.signOut();
-  } on PostgrestException catch (e) {
-    throw ServerException(message: e.message);
-  } on AuthException catch (e) {
-    throw ServerException(message: e.message);
-  } catch (e) {
-    throw ServerException(
-      message: 'Failed to process account deletion request: ${e.toString()}',
-    );
   }
-}
+
+  @override
+  Future<void> requestAccountDeletion({required String reason}) async {
+    try {
+      final user = client.auth.currentUser;
+      if (user == null) {
+        throw const ServerException(message: 'No authenticated user found.');
+      }
+
+      try {
+        final response = await client.functions.invoke(
+          'delete-account',
+          body: {'reason': reason},
+        );
+
+        if (response.status >= 200 && response.status < 300) {
+          await client.auth.signOut();
+          return;
+        }
+      } catch (_) {
+        // Edge function not deployed — fall through to queue
+      }
+
+      await client.from('account_deletion_requests').upsert({
+        'user_id': user.id,
+        'reason': reason,
+        'status': 'pending',
+        'requested_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'user_id');
+
+      await client.auth.signOut();
+    } on PostgrestException catch (e) {
+      throw ServerException(message: e.message);
+    } on AuthException catch (e) {
+      throw ServerException(message: e.message);
+    } catch (e) {
+      throw ServerException(
+        message:
+            'Failed to process account deletion request: ${e.toString()}',
+      );
+    }
+  }
 }

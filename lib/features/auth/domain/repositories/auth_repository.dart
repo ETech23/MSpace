@@ -23,6 +23,9 @@ abstract class AuthRepository {
     String? address,    // ✅ ADD
   });
 
+  /// Login with Google OAuth
+  Future<Either<Failure, UserModel>> loginWithGoogle();
+
   /// Logout current user
   Future<Either<Failure, void>> logout();
 

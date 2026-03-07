@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../providers/profile_provider.dart';
 
@@ -135,7 +136,7 @@ class _PrivacySettingsScreenState
 
           // Section Header
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
             child: Text(
               'INFORMATION VISIBILITY',
               style: theme.textTheme.labelSmall?.copyWith(
@@ -209,14 +210,7 @@ class _PrivacySettingsScreenState
             subtitle: 'Update your account password',
             icon: Icons.lock_outline,
             iconColor: colorScheme.tertiary,
-            onTap: () {
-              // TODO: Implement change password
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Password change coming soon!'),
-                ),
-              );
-            },
+            onTap: () => _showChangePasswordDialog(context),
           ),
 
           const SizedBox(height: 12),
@@ -224,17 +218,10 @@ class _PrivacySettingsScreenState
           _buildActionCard(
             context: context,
             title: 'Two-Factor Authentication',
-            subtitle: 'Add an extra layer of security',
+            subtitle: 'Send email verification challenge',
             icon: Icons.verified_user_outlined,
             iconColor: Colors.purple,
-            onTap: () {
-              // TODO: Implement 2FA
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('2FA setup coming soon!'),
-                ),
-              );
-            },
+            onTap: () => _sendVerificationChallenge(context),
           ),
 
           const SizedBox(height: 12),
@@ -429,4 +416,176 @@ class _PrivacySettingsScreenState
       ),
     );
   }
+
+  void _showChangePasswordDialog(BuildContext context) {
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Change Password'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: currentPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Current Password',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: newPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'New Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirmPasswordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Confirm Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final currentPassword = currentPasswordController.text.trim();
+              final newPassword = newPasswordController.text.trim();
+              final confirmPassword = confirmPasswordController.text.trim();
+              final user = Supabase.instance.client.auth.currentUser;
+              final email = user?.email;
+
+              if (email == null || email.isEmpty) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('Unable to verify account email.')),
+                );
+                return;
+              }
+              if (currentPassword.isEmpty) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('Enter your current password.')),
+                );
+                return;
+              }
+
+              final strengthError = _validatePasswordStrength(newPassword);
+              if (strengthError != null) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(content: Text(strengthError)),
+                );
+                return;
+              }
+              if (newPassword == currentPassword) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('New password must be different from current password.')),
+                );
+                return;
+              }
+              if (newPassword != confirmPassword) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('Passwords do not match.')),
+                );
+                return;
+              }
+
+              try {
+                // Re-authenticate user before sensitive password update.
+                await Supabase.instance.client.auth.signInWithPassword(
+                  email: email,
+                  password: currentPassword,
+                );
+
+                await Supabase.instance.client.auth.updateUser(
+                  UserAttributes(password: newPassword),
+                );
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Password updated successfully.')),
+                );
+              } on AuthException catch (e) {
+                if (!dialogContext.mounted) return;
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(content: Text(e.message)),
+                );
+              } catch (e) {
+                if (!dialogContext.mounted) return;
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(content: Text('Failed to update password: $e')),
+                );
+              }
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _validatePasswordStrength(String password) {
+    if (password.length < 10) {
+      return 'Password must be at least 10 characters.';
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(password)) {
+      return 'Password must include at least one uppercase letter.';
+    }
+    if (!RegExp(r'[a-z]').hasMatch(password)) {
+      return 'Password must include at least one lowercase letter.';
+    }
+    if (!RegExp(r'\d').hasMatch(password)) {
+      return 'Password must include at least one number.';
+    }
+    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-\[\]\\\/`~+=;]').hasMatch(password)) {
+      return 'Password must include at least one special character.';
+    }
+    return null;
+  }
+
+  Future<void> _sendVerificationChallenge(BuildContext context) async {
+    final user = Supabase.instance.client.auth.currentUser;
+    final email = user?.email;
+    if (email == null || email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No email found for this account.')),
+      );
+      return;
+    }
+
+    try {
+      await Supabase.instance.client.auth.signInWithOtp(
+        email: email,
+        shouldCreateUser: false,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Verification email sent to $email')),
+      );
+    } on AuthException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send verification challenge: $e')),
+      );
+    }
+  }
 }
+

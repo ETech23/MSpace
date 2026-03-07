@@ -1,8 +1,15 @@
 // lib/features/home/presentation/screens/settings_screen.dart
+import 'dart:convert';
+
 import 'package:artisan_marketplace/core/services/notification_service.dart';
+import 'package:artisan_marketplace/core/services/location_service.dart';
+import 'package:artisan_marketplace/core/services/update_user_location.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:artisan_marketplace/core/providers/theme_provider.dart';
 import 'package:artisan_marketplace/core/ads/ad_widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -28,475 +35,639 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final themeMode = ref.watch(themeModeProvider);
 
     return Scaffold(
-      backgroundColor: colorScheme.surfaceContainerLowest,
-      appBar: AppBar(
-        title: const Text('Settings'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        children: [
-          // Preferences Section
-          _buildSection(
-            context: context,
-            title: 'Preferences',
-            icon: Icons.tune,
-            iconColor: Colors.indigo,
-            children: [
-              _buildSettingTile(
-                context: context,
-                icon: Icons.notifications_outlined,
-                title: 'Notifications',
-                subtitle: 'Manage notification preferences',
-                iconColor: Colors.blue,
-                onTap: () => _showNotificationSettings(context, ref),
+      backgroundColor: colorScheme.surface,
+      body: CustomScrollView(
+        slivers: [
+          // ── Sliver app bar ────────────────────────────────────────────────
+          SliverAppBar(
+            pinned: true,
+            backgroundColor: colorScheme.surface,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            titleSpacing: 20,
+            leading: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: _BackButton(colorScheme: colorScheme, isDark: isDark),
+            ),
+            title: Text(
+              'Settings',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.7,
+                color: colorScheme.onSurface,
               ),
-              const Divider(height: 1, indent: 72),
-              _buildSettingTile(
-                context: context,
-                icon: Icons.dark_mode_outlined,
-                title: 'Theme',
-                subtitle: _themeModeSubtitle(themeMode),
-                iconColor: Colors.purple,
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _showThemePicker(context, ref, themeMode),
-              ),
-              const Divider(height: 1, indent: 72),
-              _buildSettingTile(
-                context: context,
-                icon: Icons.language,
-                title: 'Language',
-                subtitle: 'English',
-                iconColor: Colors.teal,
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('More languages coming soon!')),
-                  );
-                },
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Privacy & Security Section
-          _buildSection(
-            context: context,
-            title: 'Privacy & Security',
-            icon: Icons.security,
-            iconColor: Colors.green,
-            children: [
-              _buildSettingTile(
-                context: context,
-                icon: Icons.lock_outline,
-                title: 'Change Password',
-                subtitle: 'Update your password',
-                iconColor: Colors.red,
-                onTap: () => context.push('/profile/privacy'),
-              ),
-              const Divider(height: 1, indent: 72),
-              _buildSettingTile(
-                context: context,
-                icon: Icons.privacy_tip_outlined,
-                title: 'Privacy Settings',
-                subtitle: 'Control who can see your info',
-                iconColor: Colors.green,
-                onTap: () => context.push('/profile/privacy'),
-              ),
-              const Divider(height: 1, indent: 72),
-              _buildSettingTile(
-                context: context,
-                icon: Icons.block,
-                title: 'Blocked Users',
-                subtitle: 'Manage blocked accounts',
-                iconColor: Colors.orange,
-                onTap: () => context.push('/profile/blocked'),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Data & Storage Section
-          _buildSection(
-            context: context,
-            title: 'Data & Storage',
-            icon: Icons.storage,
-            iconColor: Colors.deepPurple,
-            children: [
-              _buildSettingTile(
-                context: context,
-                icon: Icons.download_outlined,
-                title: 'Download My Data',
-                subtitle: 'Export your account data',
-                iconColor: Colors.blue,
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Data export coming soon!')),
-                  );
-                },
-              ),
-              const Divider(height: 1, indent: 72),
-              _buildSettingTile(
-                context: context,
-                icon: Icons.delete_outline,
-                title: 'Clear Cache',
-                subtitle: 'Free up storage space',
-                iconColor: Colors.amber,
-                onTap: () => _showClearCacheDialog(context),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Legal Section
-          _buildSection(
-            context: context,
-            title: 'Legal',
-            icon: Icons.policy,
-            iconColor: Colors.grey,
-            children: [
-              _buildSettingTile(
-                context: context,
-                icon: Icons.description_outlined,
-                title: 'Terms of Service',
-                subtitle: 'Read our terms',
-                iconColor: Colors.blueGrey,
-                onTap: () => _openExternalLink(context, _termsUrl),
-              ),
-              const Divider(height: 1, indent: 72),
-              _buildSettingTile(
-                context: context,
-                icon: Icons.shield_outlined,
-                title: 'Privacy Policy',
-                subtitle: 'How we protect your data',
-                iconColor: Colors.green,
-                onTap: () => _openExternalLink(context, _privacyPolicyUrl),
-              ),
-              const Divider(height: 1, indent: 72),
-              _buildSettingTile(
-                context: context,
-                icon: Icons.gpp_good_outlined,
-                title: 'Community Guidelines',
-                subtitle: 'Safety and chat rules',
-                iconColor: Colors.deepPurple,
-                onTap: () => _openExternalLink(context, _communityGuidelinesUrl),
-              ),
-              const Divider(height: 1, indent: 72),
-              _buildSettingTile(
-                context: context,
-                icon: Icons.gavel,
-                title: 'Licenses',
-                subtitle: 'Open source licenses',
-                iconColor: Colors.grey,
-                onTap: () {
-                  showLicensePage(context: context);
-                },
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Danger Zone
-          _buildSection(
-            context: context,
-            title: 'Account Actions',
-            icon: Icons.warning_amber,
-            iconColor: Colors.red,
-            children: [
-              _buildSettingTile(
-                context: context,
-                icon: Icons.person_remove_outlined,
-                title: 'Delete Account',
-                subtitle: 'Permanently delete your account',
-                iconColor: Colors.red,
-                onTap: () => _showDeleteAccountDialog(context),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 32),
-          
-          // App Version
-          Center(
-            child: Column(
-              children: [
-                Icon(Icons.construction, size: 48, color: colorScheme.primary.withOpacity(0.5)),
-                const SizedBox(height: 8),
-                Text(
-                  'Naco v1.0.0',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Made with ❤️ in Nigeria',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
             ),
           ),
-          
-          const SizedBox(height: 32),
 
-          const Center(child: BannerAdWidget()),
-          
-          const SizedBox(height: 32),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Ad
+                  Center(child: BannerAdWidget()),
+                  const SizedBox(height: 24),
+
+                  // Preferences
+                  _SectionLabel(label: 'Preferences'),
+                  const SizedBox(height: 10),
+                  _SettingsCard(
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    items: [
+                      _SettingsItem(
+                        icon: Icons.notifications_rounded,
+                        label: 'Notifications',
+                        subtitle: 'Manage notification preferences',
+                        color: const Color(0xFF1565C0),
+                        onTap: () => _showNotificationSettings(context, ref),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.brightness_6_rounded,
+                        label: 'Theme',
+                        subtitle: _themeModeSubtitle(themeMode),
+                        color: const Color(0xFF6A1B9A),
+                        onTap: () => _showThemePicker(context, ref, themeMode),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.language_rounded,
+                        label: 'Language',
+                        subtitle: 'English',
+                        color: const Color(0xFF00695C),
+                        onTap: () => _showLanguagePicker(context),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.my_location_rounded,
+                        label: 'Location Source',
+                        subtitle: 'Use saved location or refresh now',
+                        color: const Color(0xFFEF6C00),
+                        onTap: () => _showLocationSourceSheet(context, ref),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Privacy & Security
+                  _SectionLabel(label: 'Privacy & Security'),
+                  const SizedBox(height: 10),
+                  _SettingsCard(
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    items: [
+                      _SettingsItem(
+                        icon: Icons.lock_rounded,
+                        label: 'Change Password',
+                        subtitle: 'Update your account password',
+                        color: const Color(0xFFC62828),
+                        onTap: () => context.push('/profile/privacy'),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.privacy_tip_rounded,
+                        label: 'Privacy Settings',
+                        subtitle: 'Control who can see your info',
+                        color: const Color(0xFF2E7D32),
+                        onTap: () => context.push('/profile/privacy'),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.block_rounded,
+                        label: 'Blocked Users',
+                        subtitle: 'Manage blocked accounts',
+                        color: const Color(0xFFE65100),
+                        onTap: () => context.push('/profile/blocked'),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Data & Storage
+                  _SectionLabel(label: 'Data & Storage'),
+                  const SizedBox(height: 10),
+                  _SettingsCard(
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    items: [
+                      _SettingsItem(
+                        icon: Icons.download_rounded,
+                        label: 'Download My Data',
+                        subtitle: 'Export your account data',
+                        color: const Color(0xFF1565C0),
+                        onTap: () => _exportUserData(context, ref),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.cleaning_services_rounded,
+                        label: 'Clear Cache',
+                        subtitle: 'Free up storage space',
+                        color: const Color(0xFFF57F17),
+                        onTap: () => _showClearCacheDialog(context),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Legal
+                  _SectionLabel(label: 'Legal'),
+                  const SizedBox(height: 10),
+                  _SettingsCard(
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    items: [
+                      _SettingsItem(
+                        icon: Icons.description_rounded,
+                        label: 'Terms of Service',
+                        subtitle: 'Read our terms',
+                        color: const Color(0xFF455A64),
+                        onTap: () => _openExternalLink(context, _termsUrl),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.shield_rounded,
+                        label: 'Privacy Policy',
+                        subtitle: 'How we protect your data',
+                        color: const Color(0xFF2E7D32),
+                        onTap: () => _openExternalLink(context, _privacyPolicyUrl),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.gpp_good_rounded,
+                        label: 'Community Guidelines',
+                        subtitle: 'Safety and chat rules',
+                        color: const Color(0xFF4A148C),
+                        onTap: () => _openExternalLink(context, _communityGuidelinesUrl),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.article_rounded,
+                        label: 'Licenses',
+                        subtitle: 'Open source licenses',
+                        color: const Color(0xFF546E7A),
+                        onTap: () => showLicensePage(context: context),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Danger zone
+                  _SectionLabel(label: 'Account Actions', danger: true),
+                  const SizedBox(height: 10),
+                  _SettingsCard(
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    items: [
+                      _SettingsItem(
+                        icon: Icons.person_remove_rounded,
+                        label: 'Delete Account',
+                        subtitle: 'Permanently remove your account',
+                        color: colorScheme.error,
+                        onTap: () => _showDeleteAccountDialog(context),
+                        danger: true,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 40),
+
+                  // Footer
+                  Center(
+                    child: Column(children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary.withOpacity(0.07),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.construction_rounded,
+                            size: 26, color: colorScheme.primary.withOpacity(0.6)),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Naco v1.0.0',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Made with ❤️ by Etech23',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                        ),
+                      ),
+                    ]),
+                  ),
+                  const SizedBox(height: 48),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSection({
-    required BuildContext context,
-    required String title,
-    required IconData icon,
-    required Color iconColor,
-    required List<Widget> children,
-  }) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: iconColor, size: 18),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            children: children,
-          ),
-        ),
-      ],
-    );
-  }
+  // ── Helper dialogs ──────────────────────────────────────────────────────────
 
-  Widget _buildSettingTile({
-    required BuildContext context,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color iconColor,
-    Widget? trailing,
-    required VoidCallback onTap,
-  }) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    
-    return ListTile(
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      leading: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: iconColor.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(icon, color: iconColor, size: 24),
-      ),
-      title: Text(
-        title,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: colorScheme.onSurfaceVariant,
-        ),
-      ),
-      trailing: trailing ?? Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
-    );
-  }
-
-  void _showNotificationSettings(BuildContext context, WidgetRef ref) async {
-    final notificationService = NotificationService();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Notification Settings'),
-        content: const Text('Enable notifications to get updates about your bookings and messages.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              final success = await notificationService.initialize();
-              if (success && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Notifications enabled!')),
-                );
-              } else if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to enable notifications')),
-                );
-              }
-            },
-            child: const Text('Enable Notifications'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _themeModeSubtitle(ThemeMode mode) {
-    switch (mode) {
-      case ThemeMode.light:
-        return 'Light';
-      case ThemeMode.dark:
-        return 'Dark';
-      case ThemeMode.system:
-        return 'System default';
-    }
-  }
-
-  void _showThemePicker(
-    BuildContext context,
-    WidgetRef ref,
-    ThemeMode currentMode,
-  ) {
+  void _showNotificationSettings(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) {
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
         return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.only(bottom: 12),
-            children: [
-              const ListTile(
-                title: Text('Theme'),
-                subtitle: Text('Follow device settings or choose a theme'),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 36, height: 4,
+                  decoration: BoxDecoration(
+                      color: cs.onSurfaceVariant.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Text('Notifications',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Text('Enable notifications to get updates about your bookings and messages.',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    final ok = await NotificationService().initialize();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(ok ? 'Notifications enabled!' : 'Failed to enable notifications')));
+                    }
+                  },
+                  style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 14)),
+                  child: const Text('Enable Notifications'),
+                ),
               ),
-              _buildThemeOption(
-                context: context,
-                ref: ref,
-                mode: ThemeMode.system,
-                currentMode: currentMode,
-                title: 'System default',
-                subtitle: 'Match your device theme',
-                icon: Icons.settings_suggest_outlined,
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel')),
               ),
-              _buildThemeOption(
-                context: context,
-                ref: ref,
-                mode: ThemeMode.light,
-                currentMode: currentMode,
-                title: 'Light',
-                subtitle: 'Light theme',
-                icon: Icons.light_mode_outlined,
-              ),
-              _buildThemeOption(
-                context: context,
-                ref: ref,
-                mode: ThemeMode.dark,
-                currentMode: currentMode,
-                title: 'Dark',
-                subtitle: 'Dark theme',
-                icon: Icons.dark_mode_outlined,
-              ),
-            ],
+            ]),
           ),
         );
       },
     );
   }
 
-  Widget _buildThemeOption({
-    required BuildContext context,
-    required WidgetRef ref,
-    required ThemeMode mode,
-    required ThemeMode currentMode,
-    required String title,
-    required String subtitle,
-    required IconData icon,
-  }) {
-    final theme = Theme.of(context);
-    return RadioListTile<ThemeMode>(
-      value: mode,
-      groupValue: currentMode,
-      activeColor: theme.colorScheme.primary,
-      onChanged: (value) {
-        if (value == null) return;
-        ref.read(themeModeProvider.notifier).setThemeMode(value);
-        Navigator.pop(context);
-      },
-      title: Text(title),
-      subtitle: Text(subtitle),
-      secondary: Icon(icon),
+  String _themeModeSubtitle(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:  return 'Light';
+      case ThemeMode.dark:   return 'Dark';
+      default:               return 'System default';
+    }
+  }
+
+  void _showThemePicker(BuildContext context, WidgetRef ref, ThemeMode current) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const ListTile(title: Text('Choose Theme', style: TextStyle(fontWeight: FontWeight.w700))),
+          ...{
+            ThemeMode.system: ('System default', 'Follow device setting', Icons.settings_suggest_rounded),
+            ThemeMode.light:  ('Light',           'Always light theme',   Icons.light_mode_rounded),
+            ThemeMode.dark:   ('Dark',            'Always dark theme',    Icons.dark_mode_rounded),
+          }.entries.map((e) => RadioListTile<ThemeMode>(
+            value: e.key, groupValue: current,
+            onChanged: (v) {
+              if (v != null) ref.read(themeModeProvider.notifier).setThemeMode(v);
+              Navigator.pop(ctx);
+            },
+            title: Text(e.value.$1), subtitle: Text(e.value.$2),
+            secondary: Icon(e.value.$3),
+          )),
+          const SizedBox(height: 12),
+        ]),
+      ),
     );
+  }
+
+  void _showLanguagePicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text('App Language', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.language),
+              title: const Text('English'),
+              subtitle: const Text('Current language'),
+              trailing: const Icon(Icons.check),
+              onTap: () => Navigator.pop(ctx),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showLocationSourceSheet(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Location Source',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Choose whether to keep using your saved location or fetch a fresh location now.',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _useSavedLocation(context, ref);
+                      },
+                      child: const Text('Use saved location'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _updateLocationNow(context, ref);
+                      },
+                      child: const Text('Update now'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _useSavedLocation(BuildContext context, WidgetRef ref) async {
+    final user = ref.read(authProvider).user;
+    if (user == null) return;
+
+    final locationService = LocationService();
+    await locationService.markLocationPromptHandled();
+
+    final hasSavedProfileLocation =
+        user.latitude != null && user.longitude != null;
+    if (hasSavedProfileLocation) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Using saved profile location.')),
+        );
+      }
+      return;
+    }
+
+    final cached = await locationService.getCachedLocation();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            cached != null
+                ? 'Using saved device location.'
+                : 'No saved location found. Tap "Update now" to fetch live location.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _updateLocationNow(BuildContext context, WidgetRef ref) async {
+    final user = ref.read(authProvider).user;
+    if (user == null) return;
+
+    final locationService = LocationService();
+    try {
+      final serviceEnabled = await locationService.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        await _showEnableLocationServicesDialog(context, locationService);
+        return;
+      }
+
+      var permission = await locationService.checkPermissionStatus();
+      var granted = permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse;
+
+      if (!granted) {
+        if (permission == LocationPermission.deniedForever) {
+          await _showEnableAppLocationPermissionDialog(context, locationService);
+          return;
+        }
+        permission = await locationService.requestPermissionOnce();
+        granted = permission == LocationPermission.always ||
+            permission == LocationPermission.whileInUse;
+      }
+
+      if (!granted) {
+        await _showEnableAppLocationPermissionDialog(context, locationService);
+        return;
+      }
+
+      final result = await locationService.getLocation();
+      if (result == null || !result.isLive) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not get a fresh location right now.')),
+          );
+        }
+        return;
+      }
+
+      await UpdateUserLocationService().updateUserLocation(
+        UserLocationPayload(
+          userId: user.id,
+          locationResult: result,
+          isArtisan: user.userType == 'artisan',
+        ),
+      );
+      await ref.read(authProvider.notifier).refreshUser();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.address?.isNotEmpty == true
+                  ? 'Location updated: ${result.address}'
+                  : 'Location updated successfully.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update location: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showEnableLocationServicesDialog(
+    BuildContext context,
+    LocationService locationService,
+  ) async {
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Turn on location services'),
+        content: const Text(
+          'Device location is off. Turn it on to fetch your current location.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await locationService.openLocationSettings();
+            },
+            child: const Text('Open location settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEnableAppLocationPermissionDialog(
+    BuildContext context,
+    LocationService locationService,
+  ) async {
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Allow location permission'),
+        content: const Text(
+          'Location permission is off for this app. Enable it in app settings to update now.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await locationService.openAppSettings();
+            },
+            child: const Text('Open app settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportUserData(BuildContext context, WidgetRef ref) async {
+    final user = ref.read(authProvider).user;
+    if (user == null) return;
+
+    try {
+      final supabase = Supabase.instance.client;
+      final profile = await supabase
+          .from('users')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      final bookings = await supabase
+          .from('bookings')
+          .select()
+          .or('client_id.eq.${user.id},artisan_id.eq.${user.id}');
+
+      final reviews = await supabase
+          .from('reviews')
+          .select()
+          .or('client_id.eq.${user.id},artisan_id.eq.${user.id}');
+
+      final exportPayload = {
+        'exported_at': DateTime.now().toIso8601String(),
+        'user': profile,
+        'bookings': bookings,
+        'reviews': reviews,
+      };
+
+      await Share.share(
+        const JsonEncoder.withIndent('  ').convert(exportPayload),
+        subject: 'MSpace account data export',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to export data: $e')),
+        );
+      }
+    }
   }
 
   void _showClearCacheDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Clear Cache'),
-        content: const Text('This will delete temporary files and free up storage space. Your account data will not be affected.'),
+        content: const Text('This will delete temporary files. Your account data won\'t be affected.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Cache cleared successfully!')),
-              );
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('Cache cleared!')));
             },
+            style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             child: const Text('Clear'),
           ),
         ],
@@ -506,70 +677,45 @@ class SettingsScreen extends ConsumerWidget {
 
   void _showDeleteAccountDialog(BuildContext context) {
     final reasonController = TextEditingController();
-
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Delete Account'),
-        icon: Icon(
-          Icons.warning_amber,
-          size: 48,
-          color: Theme.of(dialogContext).colorScheme.error,
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'This will permanently delete your account. Enter a reason to continue.',
+        icon: Icon(Icons.warning_amber_rounded, size: 44, color: Theme.of(dCtx).colorScheme.error),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('This will permanently delete your account. Enter a reason to continue.'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: reasonController,
+            maxLines: 3,
+            decoration: InputDecoration(
+              labelText: 'Reason',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: reasonController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Reason',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
           ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               final reason = reasonController.text.trim();
               if (reason.isEmpty) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  const SnackBar(content: Text('Please provide a reason.')),
-                );
+                ScaffoldMessenger.of(dCtx).showSnackBar(
+                    const SnackBar(content: Text('Please provide a reason.')));
                 return;
               }
-
-              final container = ProviderScope.containerOf(dialogContext);
-              final ok = await container
-                  .read(authProvider.notifier)
-                  .requestAccountDeletion(reason: reason);
-              if (!dialogContext.mounted) return;
-
-              Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    ok
-                        ? 'Account deletion requested. You have been signed out.'
-                        : 'Unable to process deletion request. Try again.',
-                  ),
-                ),
-              );
-              if (ok && dialogContext.mounted) {
-                dialogContext.go('/login');
-              }
+              final container = ProviderScope.containerOf(dCtx);
+              final ok = await container.read(authProvider.notifier).requestAccountDeletion(reason: reason);
+              if (!dCtx.mounted) return;
+              Navigator.pop(dCtx);
+              ScaffoldMessenger.of(dCtx).showSnackBar(SnackBar(content: Text(
+                  ok ? 'Account deletion requested.' : 'Could not process request. Try again.')));
+              if (ok && dCtx.mounted) dCtx.go('/login');
             },
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              backgroundColor: Theme.of(dCtx).colorScheme.error,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             child: const Text('Delete Account'),
           ),
@@ -580,11 +726,168 @@ class SettingsScreen extends ConsumerWidget {
 
   Future<void> _openExternalLink(BuildContext context, String url) async {
     final uri = Uri.parse(url);
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open: $url')),
-      );
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not open: $url')));
     }
   }
 }
+
+// ── Sub-widgets ───────────────────────────────────────────────────────────────
+
+class _BackButton extends StatelessWidget {
+  const _BackButton({required this.colorScheme, required this.isDark});
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.pop(),
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(Icons.arrow_back_rounded, size: 18, color: colorScheme.onSurface),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label, this.danger = false});
+  final String label;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Text(
+      label.toUpperCase(),
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.1,
+        color: danger ? cs.error.withOpacity(0.8) : cs.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+class _SettingsItem {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+  final bool danger;
+
+  const _SettingsItem({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+    this.danger = false,
+  });
+}
+
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({
+    required this.items,
+    required this.colorScheme,
+    required this.isDark,
+  });
+  final List<_SettingsItem> items;
+  final ColorScheme colorScheme;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final cardBg = isDark
+        ? Color.alphaBlend(Colors.white.withOpacity(0.05), colorScheme.surface)
+        : colorScheme.surface;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Column(
+          children: items.asMap().entries.map((e) {
+            final isLast = e.key == items.length - 1;
+            return Column(children: [
+              _SettingsRow(item: e.value, colorScheme: colorScheme),
+              if (!isLast)
+                Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  indent: 62,
+                  color: colorScheme.outlineVariant.withOpacity(0.5),
+                ),
+            ]);
+          }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsRow extends StatelessWidget {
+  const _SettingsRow({required this.item, required this.colorScheme});
+  final _SettingsItem item;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: item.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
+          child: Row(children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: item.color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(item.icon, color: item.color, size: 19),
+            ),
+            const SizedBox(width: 13),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(item.label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: item.danger ? colorScheme.error : colorScheme.onSurface,
+                  )),
+              const SizedBox(height: 1),
+              Text(item.subtitle,
+                  style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+            ])),
+            Icon(Icons.chevron_right_rounded,
+                size: 18, color: colorScheme.onSurfaceVariant.withOpacity(0.4)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+
+

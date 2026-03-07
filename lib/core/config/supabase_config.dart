@@ -15,6 +15,8 @@ class SupabaseConfig {
   );
 
   static Future<void> initialize() async {
+    _validateRequiredEnv();
+
     await Supabase.initialize(
       url: supabaseUrl,
       anonKey: supabaseAnonKey,
@@ -29,6 +31,31 @@ class SupabaseConfig {
         retryAttempts: 3,
       ),
     );
+  }
+
+  static void _validateRequiredEnv() {
+    if (supabaseUrl == 'YOUR_SUPABASE_URL') {
+      throw StateError(
+        'Missing SUPABASE_URL. Build with --dart-define=SUPABASE_URL=https://<project>.supabase.co',
+      );
+    }
+
+    final parsed = Uri.tryParse(supabaseUrl);
+    final hasValidHost = parsed != null &&
+        (parsed.scheme == 'https' || parsed.scheme == 'http') &&
+        parsed.host.isNotEmpty;
+    if (!hasValidHost) {
+      throw StateError(
+        'Invalid SUPABASE_URL "$supabaseUrl". Expected a full URL like https://<project>.supabase.co',
+      );
+    }
+
+    if (supabaseAnonKey == 'YOUR_SUPABASE_ANON_KEY' ||
+        supabaseAnonKey.trim().isEmpty) {
+      throw StateError(
+        'Missing SUPABASE_ANON_KEY. Build with --dart-define=SUPABASE_ANON_KEY=<anon-key>',
+      );
+    }
   }
 
   static SupabaseClient get client => Supabase.instance.client;

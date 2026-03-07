@@ -1,4 +1,4 @@
-package com.example.artisan_marketplace_new
+package com.mspace.app
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -23,3 +23,4 @@ class MainActivity : FlutterActivity() {
     super.cleanUpFlutterEngine(flutterEngine)
   }
 }
+

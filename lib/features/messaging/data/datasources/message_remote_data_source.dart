@@ -328,28 +328,53 @@ Future<MessageModel> sendFileMessage({
     String? bookingId,
   }) async {
     try {
+      final currentUserId = supabase.auth.currentUser?.id;
+      if (currentUserId == null) {
+        throw const ServerException(message: 'You need to be logged in to start a conversation.');
+      }
+
+      final otherUserId = userId1 == currentUserId ? userId2 : userId1;
+      if (otherUserId == currentUserId) {
+        throw const ServerException(message: 'You cannot start a conversation with yourself.');
+      }
+
       final existing = await supabase
           .from('conversations')
           .select('id')
-          .or('and(participant1_id.eq.$userId1,participant2_id.eq.$userId2),'
-              'and(participant1_id.eq.$userId2,participant2_id.eq.$userId1)')
+          .or('and(participant1_id.eq.$currentUserId,participant2_id.eq.$otherUserId),'
+              'and(participant1_id.eq.$otherUserId,participant2_id.eq.$currentUserId)')
           .maybeSingle();
 
       if (existing != null) {
         return existing['id'] as String;
       }
 
-      final response = await supabase
-          .from('conversations')
-          .insert({
-            'participant1_id': userId1,
-            'participant2_id': userId2,
-            if (bookingId != null) 'booking_id': bookingId,
-          })
-          .select('id')
-          .single();
-
-      return response['id'] as String;
+      try {
+        final response = await supabase
+            .from('conversations')
+            .insert({
+              'participant1_id': currentUserId,
+              'participant2_id': otherUserId,
+              if (bookingId != null) 'booking_id': bookingId,
+            })
+            .select('id')
+            .single();
+        return response['id'] as String;
+      } on PostgrestException catch (e) {
+        if (e.code == '42501') {
+          final swapped = await supabase
+              .from('conversations')
+              .insert({
+                'participant1_id': otherUserId,
+                'participant2_id': currentUserId,
+                if (bookingId != null) 'booking_id': bookingId,
+              })
+              .select('id')
+              .single();
+          return swapped['id'] as String;
+        }
+        rethrow;
+      }
     } catch (e) {
       throw ServerException(message: 'Failed to create conversation: $e');
     }

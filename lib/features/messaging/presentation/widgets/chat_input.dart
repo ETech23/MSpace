@@ -12,6 +12,7 @@ class ChatInput extends StatefulWidget {
   final VoidCallback onSend;
   final Function(String filePath, int durationSeconds)? onVoiceSend;
   final Function(List<File> imageFiles)? onFileSend;
+  final Function(String filePath)? onDocumentSend;
   final VoidCallback? onImagePick;
   final bool isSending;
 
@@ -21,6 +22,7 @@ class ChatInput extends StatefulWidget {
     required this.onSend,
     this.onVoiceSend,
     this.onFileSend,
+    this.onDocumentSend,
     this.onImagePick,
     this.isSending = false,
   });
@@ -216,11 +218,11 @@ class _ChatInputState extends State<ChatInput> {
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
         if (file.path != null) {
-          // For documents, you might want to handle them differently
-          // For now, we'll show an error as the current implementation expects images
-          _showError('Document upload coming soon');
-          // TODO: Implement document upload separately
-          // widget.onDocumentSend?.call(file.path!);
+          if (widget.onDocumentSend != null) {
+            widget.onDocumentSend!(file.path!);
+          } else {
+            _showError('Document upload is unavailable');
+          }
         }
       }
     } catch (e) {

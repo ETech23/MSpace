@@ -10,7 +10,15 @@ class GetFeaturedArtisansUseCase {
 
   Future<Either<Failure, List<ArtisanEntity>>> call({
     int limit = 10,
+    double? latitude,
+    double? longitude,
+    bool nationwide = false,
   }) async {
-    return await repository.getFeaturedArtisans(limit: limit);
+    return await repository.getFeaturedArtisans(
+      limit: limit,
+      latitude: latitude,
+      longitude: longitude,
+      nationwide: nationwide,
+    );
   }
 }
