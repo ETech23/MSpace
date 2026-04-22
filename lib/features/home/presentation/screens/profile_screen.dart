@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../booking/presentation/providers/booking_provider.dart';
@@ -11,6 +12,8 @@ import '../../../reviews/presentation/providers/review_provider.dart';
 import '../../../trust/presentation/providers/trust_provider.dart';
 import '../../../../core/ads/ad_widgets.dart';
 import '../../../../core/providers/theme_provider.dart';
+import '../../../../core/services/referral_service.dart';
+import '../../../profile/presentation/providers/user_profile_provider.dart';
 import 'dart:math';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -55,7 +58,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void _loadData() {
     final user = ref.read(authProvider).user;
     if (user != null) {
+      ref.read(settingsProvider.notifier).loadPrivacySettings(user.id);
       ref.read(bookingProvider.notifier).loadUserBookings(
+            userId: user.id,
+            userType: user.userType,
+          );
+      ref.read(bookingProvider.notifier).loadBookingStats(
+            userId: user.id,
+            userType: user.userType,
+          );
+      ref.read(userProfileProvider.notifier).loadUserProfile(
             userId: user.id,
             userType: user.userType,
           );
@@ -75,6 +87,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final authState = ref.watch(authProvider);
     final user = authState.user;
     final themeMode = ref.watch(themeModeProvider);
+    final privacySettings = ref.watch(settingsProvider).privacySettings;
 
     if (user == null) return Scaffold(body: _NotLoggedIn());
 
@@ -90,16 +103,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       );
     }
 
-    final isArtisan = user.userType == 'artisan';
+    final isArtisan = user.isArtisan;
+    final isBusiness = user.isBusiness;
+    final isPublicProfileEnabled = (privacySettings?.profileVisible ?? true) &&
+        (privacySettings?.webProfileVisible ?? true);
+    final publicProfileSubtitle = privacySettings == null
+        ? 'Preview how your profile appears on the web'
+        : isPublicProfileEnabled
+            ? 'Preview how your profile appears on the web'
+            : !(privacySettings.profileVisible)
+                ? 'Profile visibility is off, so your web profile is hidden'
+                : 'Turn Web Profile Visible back on to appear online';
+    final roleLabel = isBusiness ? 'Business' : (isArtisan ? 'Artisan' : 'Client');
     final bookingCount = ref.watch(bookingProvider).bookings.length;
+    final bookingStats = ref.watch(bookingProvider).stats;
     final savedCount = ref.watch(savedArtisansProvider).artisans.length;
     final reviewState = ref.watch(reviewProvider);
+    final userStats = ref.watch(userProfileProvider).stats ?? const <String, dynamic>{};
     final reviewCount = reviewState.reviews.length;
     double? avgRating;
     if (isArtisan && reviewCount > 0) {
       avgRating = reviewState.reviews.fold<double>(0, (s, r) => s + r.rating) /
           reviewCount;
     }
+    final totalBookings =
+        (userStats['totalBookings'] as int?) ?? bookingStats?['total'] ?? bookingCount;
+    final completedBookings =
+        (userStats['completedBookings'] as int?) ?? bookingStats?['completed'] ?? 0;
+    final completionRate =
+        totalBookings == 0 ? 0 : ((completedBookings / totalBookings) * 100).round();
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -109,14 +141,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _UserHeader(
             user: user,
             isArtisan: isArtisan,
+            isBusiness: isBusiness,
+            roleLabel: roleLabel,
             fadeAnim: _headerFade,
             colorScheme: colorScheme,
             onSettings: () => context.push('/profile/settings'),
-            onShare: () {
-              final link = 'https://mspace.app/artisan/${user.id}';
+            onShare: () async {
+              final referralService =
+                  ReferralService(Supabase.instance.client);
+              final code = await referralService.ensureReferralCode(user.id);
+              final link = referralService.buildPlayStoreShareLink(
+                packageName: 'com.mspace.app',
+                code: code,
+              );
               Clipboard.setData(ClipboardData(text: link));
+              if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Profile link copied!')),
+                const SnackBar(content: Text('Invite link copied!')),
               );
             },
           ),
@@ -172,6 +213,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         color: const Color(0xFFFFA000),
                         onTap: () => context.push('/reviews'),
                       ),
+                      _MenuItem(
+                        icon: Icons.receipt_long_rounded,
+                        label: 'Invoices',
+                        subtitle: 'Create, print, and share invoice PDFs',
+                        color: const Color(0xFF00897B),
+                        onTap: () => context.push('/profile/invoices'),
+                      ),
+                      _MenuItem(
+                        icon: Icons.analytics_rounded,
+                        label: 'My Analytics',
+                        subtitle: 'Completion rate: $completionRate% across $totalBookings bookings',
+                        color: const Color(0xFF6A1B9A),
+                        onTap: () => context.push('/profile/analytics'),
+                      ),
                     ],
                   ),
 
@@ -190,6 +245,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         color: const Color(0xFF1E88E5),
                         onTap: () => context.push('/profile/edit'),
                       ),
+                      if (isArtisan || isBusiness)
+                        _MenuItem(
+                          icon: isPublicProfileEnabled
+                              ? Icons.public_rounded
+                              : Icons.public_off_rounded,
+                          label: 'Open Public Profile',
+                          subtitle: publicProfileSubtitle,
+                          color: isPublicProfileEnabled
+                              ? const Color(0xFF00897B)
+                              : const Color(0xFF757575),
+                          onTap: () => isPublicProfileEnabled
+                              ? _openPublicProfile(context, user.id)
+                              : context.push('/profile/privacy'),
+                        ),
                       _MenuItem(
                         icon: Icons.verified_user_rounded,
                         label: 'Identity Verification',
@@ -205,13 +274,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         onTap: () => _showThemePicker(context, ref, themeMode),
                       ),
                       _MenuItem(
-                        icon: isArtisan
+                        icon: (isArtisan || isBusiness)
                             ? Icons.person_rounded
                             : Icons.construction_rounded,
-                        label: isArtisan
-                            ? 'Switch to Customer'
-                            : 'Become an Artisan',
-                        subtitle: isArtisan
+                        label: (isArtisan || isBusiness)
+                            ? 'Switch to Client'
+                            : 'Become a Service Provider',
+                        subtitle: (isArtisan || isBusiness)
                             ? 'Browse and book services'
                             : 'Start offering your services',
                         color: const Color(0xFFF4511E),
@@ -266,23 +335,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   void _showSwitchDialog(
       BuildContext context, WidgetRef ref, dynamic user) async {
-    final isArtisan = user.userType == 'artisan';
+    final isProvider = user.userType == 'artisan' || user.userType == 'business';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(isArtisan ? 'Switch to Customer?' : 'Become an Artisan?'),
-        content: Text(isArtisan
+        title: Text(isProvider ? 'Switch to Client?' : 'Become a Service Provider?'),
+        content: Text(isProvider
             ? "You'll browse and book services. You can switch back anytime."
-            : "You'll be able to offer your services. You can switch back anytime."),
+            : "You'll be able to offer services as an artisan or business. You can switch back anytime."),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text(isArtisan ? 'Switch' : 'Continue')),
+              child: Text(isProvider ? 'Switch' : 'Continue')),
         ],
       ),
     );
@@ -295,15 +364,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
     try {
       await ref.read(authProvider.notifier).switchUserType(
-            isArtisan ? 'customer' : 'artisan',
+            isProvider ? 'customer' : 'artisan',
             user.id,
           );
       if (context.mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(isArtisan
-              ? 'Switched to Customer!'
-              : "You're now an Artisan!"),
+          content: Text(isProvider
+              ? 'Switched to Client!'
+              : "You're now a Service Provider!"),
           backgroundColor: Colors.green,
         ));
         await Future.delayed(const Duration(milliseconds: 300));
@@ -327,7 +396,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           Icon(Icons.construction, size: 48, color: theme.colorScheme.primary),
       children: [
         const Text(
-            'Your trusted marketplace for finding skilled artisans in Nigeria.'),
+            'Your trusted marketplace for hiring skilled artisans and service businesses in Nigeria.'),
       ],
     );
   }
@@ -444,6 +513,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       }
     }
   }
+
+  Future<void> _openPublicProfile(BuildContext context, String userId) async {
+    final uri = Uri.parse('https://naco-d2738.web.app/p/$userId');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+        context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open public profile.')),
+      );
+    }
+  }
 }
 
 // ── User header sliver ────────────────────────────────────────────────────────
@@ -452,6 +531,8 @@ class _UserHeader extends StatelessWidget {
   const _UserHeader({
     required this.user,
     required this.isArtisan,
+    required this.isBusiness,
+    required this.roleLabel,
     required this.fadeAnim,
     required this.colorScheme,
     required this.onSettings,
@@ -460,6 +541,8 @@ class _UserHeader extends StatelessWidget {
 
   final dynamic user;
   final bool isArtisan;
+  final bool isBusiness;
+  final String roleLabel;
   final Animation<double> fadeAnim;
   final ColorScheme colorScheme;
   final VoidCallback onSettings;
@@ -502,6 +585,8 @@ class _UserHeader extends StatelessWidget {
         background: _HeaderBackground(
           user: user,
           isArtisan: isArtisan,
+          isBusiness: isBusiness,
+          roleLabel: roleLabel,
           colorScheme: colorScheme,
           fadeAnim: fadeAnim,
         ),
@@ -514,12 +599,16 @@ class _HeaderBackground extends StatelessWidget {
   const _HeaderBackground({
     required this.user,
     required this.isArtisan,
+    required this.isBusiness,
+    required this.roleLabel,
     required this.colorScheme,
     required this.fadeAnim,
   });
 
   final dynamic user;
   final bool isArtisan;
+  final bool isBusiness;
+  final String roleLabel;
   final ColorScheme colorScheme;
   final Animation<double> fadeAnim;
 
@@ -534,15 +623,20 @@ class _HeaderBackground extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: isArtisan
+              colors: isBusiness
                   ? [
-                      const Color(0xFF1565C0),
-                      const Color(0xFF0D47A1),
+                      const Color(0xFF2E7D32),
+                      const Color(0xFF1B5E20),
                     ]
-                  : [
-                      colorScheme.primary,
-                      Color.lerp(colorScheme.primary, colorScheme.tertiary, 0.6)!,
-                    ],
+                  : isArtisan
+                      ? [
+                          const Color(0xFF1565C0),
+                          const Color(0xFF0D47A1),
+                        ]
+                      : [
+                          colorScheme.primary,
+                          Color.lerp(colorScheme.primary, colorScheme.tertiary, 0.6)!,
+                        ],
             ),
           ),
         ),
@@ -626,15 +720,17 @@ class _HeaderBackground extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    isArtisan
-                                        ? Icons.construction_rounded
-                                        : Icons.person_rounded,
+                                    isBusiness
+                                        ? Icons.store_mall_directory_rounded
+                                        : (isArtisan
+                                            ? Icons.construction_rounded
+                                            : Icons.person_rounded),
                                     size: 12,
                                     color: Colors.white,
                                   ),
                                   const SizedBox(width: 5),
                                   Text(
-                                    isArtisan ? 'Artisan' : 'Customer',
+                                    roleLabel,
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 11,
@@ -1453,6 +1549,7 @@ class _AdminHexPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter _) => false;
 }
+
 
 
 

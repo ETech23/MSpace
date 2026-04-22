@@ -426,6 +426,22 @@ await androidPlugin.createNotificationChannel(
     );
   }
 
+  Future<void> sendSystemNotification({
+    required String title,
+    required String body,
+    Map<String, dynamic>? data,
+  }) async {
+    await _sendNotification(
+      channelId: _systemChannelId,
+      channelName: _systemChannelName,
+      title: title,
+      body: body,
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      data: data,
+    );
+  }
+
   // ========================= JOB NOTIFICATIONS =========================
 
 Future<void> sendJobPostedNotification({
@@ -515,29 +531,6 @@ Future<void> sendJobAcceptedNotification({
     );
   }
 
-  // ========================= SYSTEM NOTIFICATIONS =========================
-
-  Future<void> sendSystemNotification({
-    required String title,
-    required String body,
-    Map<String, dynamic>? data,
-  }) async {
-    await _sendNotification(
-      channelId: _systemChannelId,
-      channelName: _systemChannelName,
-      title: title,
-      body: body,
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      playSound: false,
-      enableVibration: false,
-      data: data ?? {
-        'type': 'system',
-        'action': 'none',
-      },
-    );
-  }
-
   // ========================= NAVIGATION HANDLING =========================
 
   Function(Map<String, dynamic>)? _onNotificationTap;
@@ -579,3 +572,4 @@ Future<void> sendJobAcceptedNotification({
     return [];
   }
 }
+

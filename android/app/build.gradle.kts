@@ -62,7 +62,7 @@ android {
             dimension = "env"
             resValue("string", "app_name", "MSpace")
             val admobAppId = System.getenv("ADMOB_APP_ID_ANDROID")
-                ?: "ca-app-pub-0000000000000000~0000000000"
+                ?: "ca-app-pub-1208599750391446~3597176871"
             resValue("string", "admob_app_id", admobAppId)
         }
     }
@@ -100,6 +100,9 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+
+    // Play Install Referrer
+    implementation("com.android.installreferrer:installreferrer:2.2")
 
     // Flutter local notifications (Android dependency handled automatically)
 }

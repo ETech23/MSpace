@@ -7,7 +7,7 @@ abstract class ReviewRepository {
   Future<Either<Failure, ReviewEntity>> createReview({
     required String bookingId,
     required String artisanId,
-    required String clientId,
+    required String customerId,
     required double rating,
     String? comment,
   });

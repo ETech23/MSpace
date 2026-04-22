@@ -18,13 +18,15 @@ abstract class AuthRepository {
     required String name,
     required String phone,
     required String userType,
+    String? referralCode,
+    String? referralSource,
     double? latitude,   // ✅ ADD
     double? longitude,  // ✅ ADD
     String? address,    // ✅ ADD
   });
 
   /// Login with Google OAuth
-  Future<Either<Failure, UserModel>> loginWithGoogle();
+  Future<Either<Failure, UserModel>> loginWithGoogle({String? preferredUserType});
 
   /// Logout current user
   Future<Either<Failure, void>> logout();
@@ -37,5 +39,6 @@ abstract class AuthRepository {
 
   Future<void> updateUserType(String userId, String newType);
   Future<void> createArtisanProfileIfNeeded(String userId);
+  Future<void> createBusinessProfileIfNeeded(String userId, {String? businessName});
   Future<void> requestAccountDeletion({required String reason});
 }

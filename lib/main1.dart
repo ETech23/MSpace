@@ -225,6 +225,8 @@ class _ArtisanMarketplaceAppState extends ConsumerState<ArtisanMarketplaceApp> {
       );
     } else if (action == 'open_notifications') {
       router.push('/notifications');
+    } else if (action == 'open_profile_analytics') {
+      router.push('/profile/analytics');
     } else if (action == 'open_job') {
       // Handle job notifications (server sends subType and relatedId)
       final subType = data['subType'] as String? ?? '';

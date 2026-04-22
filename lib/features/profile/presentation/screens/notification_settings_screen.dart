@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../domain/entities/notification_settings_entity.dart';
 import '../providers/profile_provider.dart';
 
 class NotificationSettingsScreen extends ConsumerStatefulWidget {
@@ -25,34 +26,15 @@ class _NotificationSettingsScreenState
     });
   }
 
-  Future<void> _updateSettings() async {
-    final user = ref.read(authProvider).user;
-    final settings = ref.read(settingsProvider).notificationSettings;
-
-    if (user != null && settings != null) {
-      final success = await ref
-          .read(settingsProvider.notifier)
-          .updateNotificationSettings(user.id, settings);
-
-      if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Settings saved successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final settingsState = ref.watch(settingsProvider);
     final settings = settingsState.notificationSettings;
+    final isSaving = settingsState.isLoading && settings != null;
 
-    if (settingsState.isLoading) {
+    if (settingsState.isLoading && settings == null) {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Notifications'),
@@ -88,10 +70,18 @@ class _NotificationSettingsScreenState
       appBar: AppBar(
         title: const Text('Notifications'),
         centerTitle: true,
+        bottom: isSaving
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(2),
+                child: LinearProgressIndicator(minHeight: 2),
+              )
+            : null,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: IgnorePointer(
+        ignoring: isSaving,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
           // Header
           Container(
             padding: const EdgeInsets.all(16),
@@ -119,7 +109,7 @@ class _NotificationSettingsScreenState
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Manage how you receive notifications',
+                        'Choose which alerts you receive from the app',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -140,13 +130,9 @@ class _NotificationSettingsScreenState
             subtitle: 'Receive push notifications on your device',
             icon: Icons.phone_android,
             value: settings.pushNotifications,
-            onChanged: (value) {
-              final updated = settings.copyWith(pushNotifications: value);
-              ref.read(settingsProvider.notifier).updateNotificationSettings(
-                    ref.read(authProvider).user!.id,
-                    updated,
-                  );
-            },
+            onChanged: (value) => _updateNotificationSettings(
+              settings.copyWith(pushNotifications: value),
+            ),
           ),
 
           const SizedBox(height: 12),
@@ -158,13 +144,9 @@ class _NotificationSettingsScreenState
             subtitle: 'Receive notifications via email',
             icon: Icons.email_outlined,
             value: settings.emailNotifications,
-            onChanged: (value) {
-              final updated = settings.copyWith(emailNotifications: value);
-              ref.read(settingsProvider.notifier).updateNotificationSettings(
-                    ref.read(authProvider).user!.id,
-                    updated,
-                  );
-            },
+            onChanged: (value) => _updateNotificationSettings(
+              settings.copyWith(emailNotifications: value),
+            ),
           ),
 
           const SizedBox(height: 24),
@@ -188,13 +170,9 @@ class _NotificationSettingsScreenState
             subtitle: 'Get notified about booking status changes',
             icon: Icons.event_note,
             value: settings.bookingUpdates,
-            onChanged: (value) {
-              final updated = settings.copyWith(bookingUpdates: value);
-              ref.read(settingsProvider.notifier).updateNotificationSettings(
-                    ref.read(authProvider).user!.id,
-                    updated,
-                  );
-            },
+            onChanged: (value) => _updateNotificationSettings(
+              settings.copyWith(bookingUpdates: value),
+            ),
           ),
 
           const SizedBox(height: 12),
@@ -206,13 +184,9 @@ class _NotificationSettingsScreenState
             subtitle: 'Be notified when you receive new messages',
             icon: Icons.message_outlined,
             value: settings.newMessages,
-            onChanged: (value) {
-              final updated = settings.copyWith(newMessages: value);
-              ref.read(settingsProvider.notifier).updateNotificationSettings(
-                    ref.read(authProvider).user!.id,
-                    updated,
-                  );
-            },
+            onChanged: (value) => _updateNotificationSettings(
+              settings.copyWith(newMessages: value),
+            ),
           ),
 
           const SizedBox(height: 12),
@@ -224,15 +198,37 @@ class _NotificationSettingsScreenState
             subtitle: 'Receive special offers and promotional content',
             icon: Icons.local_offer_outlined,
             value: settings.promotions,
-            onChanged: (value) {
-              final updated = settings.copyWith(promotions: value);
-              ref.read(settingsProvider.notifier).updateNotificationSettings(
-                    ref.read(authProvider).user!.id,
-                    updated,
-                  );
-            },
+            onChanged: (value) => _updateNotificationSettings(
+              settings.copyWith(promotions: value),
+            ),
           ),
         ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _updateNotificationSettings(
+    NotificationSettingsEntity settings,
+  ) async {
+    final user = ref.read(authProvider).user;
+    if (user == null) {
+      return;
+    }
+    final success = await ref
+        .read(settingsProvider.notifier)
+        .updateNotificationSettings(user.id, settings);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'Notification settings updated.'
+              : 'Failed to update notification settings.',
+        ),
+        backgroundColor: success ? Colors.green : Colors.red,
       ),
     );
   }

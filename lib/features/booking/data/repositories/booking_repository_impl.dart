@@ -37,7 +37,7 @@ class BookingRepositoryImpl implements BookingRepository {
     if (await networkInfo.isConnected) {
       try {
         final booking = await remoteDataSource.createBooking(
-          clientId: customerId,
+          customerId: customerId,
           artisanId: artisanId,
           artisanProfileId: artisanProfileId,
           serviceType: serviceType,
@@ -224,3 +224,4 @@ class BookingRepositoryImpl implements BookingRepository {
     }
   }
 }
+

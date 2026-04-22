@@ -20,6 +20,10 @@ import 'core/widgets/offline_overlay.dart';
 import 'core/ads/ad_remote_config_service.dart';
 import 'core/config/feature_flags_service.dart';
 import 'core/widgets/app_maintenance_screen.dart';
+import 'core/services/install_referrer_service.dart';
+import 'core/services/deep_link_service.dart';
+import 'core/services/onboarding_service.dart';
+import 'package:flutter/services.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -33,6 +37,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
 
   Object? bootError;
   StackTrace? bootStackTrace;
@@ -44,6 +51,9 @@ void main() async {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     await SupabaseConfig.initialize();
     await init();
+    await InstallReferrerService().captureIfNeeded();
+    await DeepLinkService.instance.startListening();
+    await OnboardingService.initialize();
   } catch (e, st) {
     bootError = e;
     bootStackTrace = st;
@@ -325,6 +335,32 @@ class _ArtisanMarketplaceAppState
     }
   }
 
+  String? _extractDisputeId(Map<String, dynamic> data) {
+    final candidates = [
+      data['disputeId'],
+      data['dispute_id'],
+      data['relatedId'],
+      data['related_id'],
+      data['id'],
+    ];
+    for (final value in candidates) {
+      if (value == null) continue;
+      final parsed = value.toString().trim();
+      if (parsed.isNotEmpty) return parsed;
+    }
+    return null;
+  }
+
+  String? _extractBookingId(Map<String, dynamic> data) {
+    final candidates = [data['bookingId'], data['booking_id']];
+    for (final value in candidates) {
+      if (value == null) continue;
+      final parsed = value.toString().trim();
+      if (parsed.isNotEmpty) return parsed;
+    }
+    return null;
+  }
+
   void _handleNotificationNavigation(Map<String, dynamic> data) {
     final router = ref.read(routerProvider);
     final action = data['action'] as String?;
@@ -332,7 +368,18 @@ class _ArtisanMarketplaceAppState
     print('🔔 Notification tap payload: $data');
     print('🔔 Handling notification tap with action: $action');
 
-    if (action == 'open_booking' && data['bookingId'] != null) {
+    final dataType = data['type'] as String?;
+    final disputeId = _extractDisputeId(data);
+    if ((action == 'open_dispute' || dataType == 'dispute') &&
+        disputeId != null) {
+      final bookingId = _extractBookingId(data);
+      final query = bookingId != null ? '?bookingId=$bookingId' : '';
+      router.push('/disputes/$disputeId/hearing$query');
+    } else if (dataType == 'dispute' &&
+        (data['subType'] == 'admin_new_dispute' ||
+            action == 'open_notifications')) {
+      router.push('/admin/disputes');
+    } else if (action == 'open_booking' && data['bookingId'] != null) {
       router.push('/bookings/${data['bookingId']}');
     } else if (action == 'open_chat' && data['conversationId'] != null) {
       router.push(
@@ -345,6 +392,10 @@ class _ArtisanMarketplaceAppState
       );
     } else if (action == 'open_notifications') {
       router.push('/notifications');
+    } else if (action == 'open_profile_analytics') {
+      router.push('/profile/analytics');
+    } else if (action == 'open_feed_tips') {
+      router.push('/feed?tab=tips');
     } else if (action == 'open_appeal') {
       router.push('/notifications');
     } else if (action == 'open_job') {
@@ -613,3 +664,5 @@ class _ArtisanMarketplaceAppState
     );
   }
 }
+
+

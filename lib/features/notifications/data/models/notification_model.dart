@@ -1,4 +1,5 @@
 // lib/features/notifications/data/models/notification_model.dart
+import 'dart:convert';
 import '../../domain/entities/notification_entity.dart';
 
 class NotificationModel extends NotificationEntity {
@@ -23,11 +24,31 @@ class NotificationModel extends NotificationEntity {
       body: json['body'] as String,
       type: _parseType(json['type'] as String),
       relatedId: json['related_id'] as String?,
-      data: json['data'] as Map<String, dynamic>?,
+      data: _parseData(json['data']),
       read: json['read'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
       // ✅ REMOVED: readAt parsing since it's not in the entity
     );
+  }
+
+  static Map<String, dynamic>? _parseData(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry(key.toString(), value));
+    }
+    if (raw is String) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) {
+          return decoded.map((key, value) => MapEntry(key.toString(), value));
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
   }
 
   Map<String, dynamic> toJson() {

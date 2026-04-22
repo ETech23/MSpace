@@ -66,12 +66,14 @@ class _EmailConfirmedScreenState
           profile['longitude'] != null;
 
       if (!hasLocation) {
-        final isArtisan = profile?['user_type'] == 'artisan';
+        final isArtisan = profile?['user_type'] == 'artisan' ||
+            profile?['user_type'] == 'business';
         context.go(
           '/location-setup?userId=${user.id}&isArtisan=$isArtisan',
         );
       } else {
-        context.go('/home');
+        final isBusiness = profile?['user_type'] == 'business';
+        context.go(isBusiness ? '/profile/edit' : '/home');
       }
     } catch (_) {
       if (mounted) context.go('/home');

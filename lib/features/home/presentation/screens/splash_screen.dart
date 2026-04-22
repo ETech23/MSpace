@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../../core/services/onboarding_service.dart';
 
 class SplashScreen extends ConsumerWidget {
   const SplashScreen({super.key});
@@ -11,9 +12,21 @@ class SplashScreen extends ConsumerWidget {
     final isInitialized = ref.watch(isAuthInitializedProvider);
 
     if (isInitialized) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (context.mounted) {
-          context.go('/home');
+          // Check if user has seen onboarding
+          final hasSeenOnboarding =
+              await OnboardingService.hasShownOnboarding();
+
+          if (context.mounted) {
+            if (!hasSeenOnboarding) {
+              // Show onboarding for new users
+              context.go('/onboarding');
+            } else {
+              // Go to home (authenticated) or login (not authenticated)
+              context.go('/home');
+            }
+          }
         }
       });
     }

@@ -8,6 +8,8 @@ import '../../domain/usecases/logout_usecase.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../../../core/services/push_notification_service.dart';
+import '../../../../core/services/install_referrer_service.dart';
+import '../../../../core/services/analytics_service.dart';
 import '../../../../core/providers/connectivity_provider.dart';
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -168,6 +170,15 @@ void _listenToTokenRefresh(String userId) {
               _startNotificationListener(user.id);
                _saveFCMToken(user.id);
               _listenToTokenRefresh(user.id);
+              AnalyticsService.instance.setUser(
+                userId: user.id,
+                userType: user.userType,
+              );
+              AnalyticsService.instance.logEvent(
+                'session_restore',
+                params: {'user_type': user.userType},
+              );
+              AnalyticsService.instance.maybeSendProfileViewDigest();
             } else {
               state = AuthState(isInitialized: true);
             }
@@ -221,14 +232,25 @@ void _listenToTokenRefresh(String userId) {
         _saveFCMToken(user.id);
         _listenToTokenRefresh(user.id);
         _sendWelcomeNotificationIfNeeded(user.id);
+        AnalyticsService.instance.setUser(
+          userId: user.id,
+          userType: user.userType,
+        );
+        AnalyticsService.instance.logEvent(
+          'login',
+          params: {'method': 'email', 'user_type': user.userType},
+        );
+        AnalyticsService.instance.maybeSendProfileViewDigest();
       },
     );
   }
 
-  Future<void> loginWithGoogle() async {
+  Future<void> loginWithGoogle({String? preferredUserType}) async {
     state = state.copyWith(isLoading: true, error: null);
 
-    final result = await loginWithGoogleUseCase();
+    final result = await loginWithGoogleUseCase(
+      preferredUserType: preferredUserType,
+    );
 
     result.fold(
       (failure) {
@@ -251,6 +273,15 @@ void _listenToTokenRefresh(String userId) {
         _saveFCMToken(user.id);
         _listenToTokenRefresh(user.id);
         _sendWelcomeNotificationIfNeeded(user.id);
+        AnalyticsService.instance.setUser(
+          userId: user.id,
+          userType: user.userType,
+        );
+        AnalyticsService.instance.logEvent(
+          'login',
+          params: {'method': 'google', 'user_type': user.userType},
+        );
+        AnalyticsService.instance.maybeSendProfileViewDigest();
       },
     );
   }
@@ -281,8 +312,20 @@ void _listenToTokenRefresh(String userId) {
     required String name,
     required String phone,
     required String userType,
+    String? referralCode,
   }) async {
     state = state.copyWith(isLoading: true, error: null);
+
+    final manualCode = referralCode?.trim();
+    final autoCode = manualCode == null || manualCode.isEmpty
+        ? await InstallReferrerService().takePendingReferralCode()
+        : null;
+    final resolvedCode = manualCode != null && manualCode.isNotEmpty
+        ? manualCode
+        : autoCode;
+    final referralSource = manualCode != null && manualCode.isNotEmpty
+        ? 'manual'
+        : (autoCode != null ? 'install_referrer' : null);
 
     final result = await registerUseCase(
       email: email,
@@ -290,6 +333,8 @@ void _listenToTokenRefresh(String userId) {
       name: name,
       phone: phone,
       userType: userType,
+      referralCode: resolvedCode,
+      referralSource: referralSource,
     );
 
     bool success = false;
@@ -310,6 +355,10 @@ void _listenToTokenRefresh(String userId) {
           isAuthenticated: false,
           error: null,
           isInitialized: true,
+        );
+        AnalyticsService.instance.logEvent(
+          'sign_up',
+          params: {'method': 'email', 'user_type': userType},
         );
         success = true;
       },
@@ -370,6 +419,8 @@ void _listenToTokenRefresh(String userId) {
       (_) {
         // ✅ Stop notification listener on logout
         _notificationListener.stopListening();
+        AnalyticsService.instance.logEvent('logout');
+        AnalyticsService.instance.clearUser();
         state = AuthState(isInitialized: true);
       },
     );
@@ -382,9 +433,12 @@ void _listenToTokenRefresh(String userId) {
       // Update user type in users table
       await authRepository.updateUserType(userId, newType);
       
-      // If switching to artisan, create artisan profile if it doesn't exist
-      if (newType == 'artisan') {
+      // If switching to artisan/business, create profiles if needed
+      if (newType == 'artisan' || newType == 'business') {
         await authRepository.createArtisanProfileIfNeeded(userId);
+      }
+      if (newType == 'business') {
+        await authRepository.createBusinessProfileIfNeeded(userId);
       }
       
       // Reload user data
@@ -399,6 +453,14 @@ void _listenToTokenRefresh(String userId) {
           if (updatedUser != null) {
             state = state.copyWith(user: updatedUser);
             print('✅ Successfully switched to $newType');
+            AnalyticsService.instance.setUser(
+              userId: updatedUser.id,
+              userType: updatedUser.userType,
+            );
+            AnalyticsService.instance.logEvent(
+              'switch_user_type',
+              params: {'user_type': updatedUser.userType},
+            );
           }
         },
       );

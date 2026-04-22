@@ -65,9 +65,53 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       case NotificationType.system:
         final data = notification.data ?? {};
         final action = data['action'] as String?;
-        if (action == null || action.isEmpty) return;
+        final dataType = data['type'] as String?;
         ref.read(systemNotificationProvider.notifier).markAsRead(notification.id, user.id);
-        if (action == 'open_edit_profile' && mounted) context.push('/profile/edit');
+        if (!mounted) return;
+        if ((action == 'open_dispute' || dataType == 'dispute') &&
+            (data['disputeId'] ?? data['relatedId']) != null) {
+          final disputeId = data['disputeId'] ?? data['relatedId'];
+          final bookingId = data['bookingId'];
+          final query = bookingId != null ? '?bookingId=$bookingId' : '';
+          context.push('/disputes/$disputeId/hearing$query');
+          return;
+        }
+        if ((dataType == 'dispute' || (notification.title.toLowerCase().contains('dispute'))) &&
+            (notification.relatedId != null || data['relatedId'] != null)) {
+          final disputeId = notification.relatedId ?? data['relatedId'];
+          final bookingId = data['bookingId'];
+          final query = bookingId != null ? '?bookingId=$bookingId' : '';
+          context.push('/disputes/$disputeId/hearing$query');
+          return;
+        }
+        if (action == 'open_edit_profile') {
+          context.push('/profile/edit');
+          return;
+        }
+        if (action == 'open_booking' && data['bookingId'] != null) {
+          context.push('/bookings/${data['bookingId']}');
+          return;
+        }
+        if (action == 'open_profile_analytics') {
+          context.push('/profile/analytics');
+          return;
+        }
+        if (action == 'open_feed_tips') {
+          context.push('/feed?tab=tips');
+          return;
+        }
+        if (action == 'open_notifications') {
+          context.push('/notifications');
+          return;
+        }
+        if (action == 'open_job') {
+          final relatedId = data['relatedId'] ?? data['jobId'];
+          if (relatedId != null) {
+            context.push('/jobs/$relatedId');
+          } else {
+            context.push('/artisan/job-matches');
+          }
+        }
         break;
 
       case NotificationType.booking:
@@ -638,7 +682,13 @@ class _NotificationListView extends StatelessWidget {
 
 bool _isActionable(NotificationEntity n) {
   if (n.type == NotificationType.system) {
-    return (n.data ?? {})['action'] == 'open_edit_profile';
+    final data = n.data ?? {};
+    final action = data['action'] as String?;
+    final dataType = data['type'] as String?;
+    if (action != null && action.isNotEmpty) return true;
+    if (dataType == 'dispute') return true;
+    if (n.title.toLowerCase().contains('dispute')) return true;
+    return false;
   }
   return true;
 }
@@ -763,12 +813,12 @@ class _NotificationTile extends StatelessWidget {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(10),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
               decoration: BoxDecoration(
@@ -784,7 +834,7 @@ class _NotificationTile extends StatelessWidget {
                         ? Color.alphaBlend(
                             Colors.white.withOpacity(0.04), colorScheme.surface)
                         : colorScheme.surface),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(10),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),

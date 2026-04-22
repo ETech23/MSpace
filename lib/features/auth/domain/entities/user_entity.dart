@@ -27,9 +27,9 @@ class UserEntity extends Equatable {
     this.updatedAt,
   });
 
-  bool get isArtisan => userType == 'artisan';
-  bool get isClient => userType == 'client' || userType == 'customer';
-  bool get isCustomer => userType == 'customer' || userType == 'client';
+  bool get isArtisan => userType == 'artisan' || userType == 'business';
+  bool get isBusiness => userType == 'business';
+  bool get isClient => userType == 'customer' || userType == 'client';
 
   @override
   List<Object?> get props => [
@@ -46,3 +46,4 @@ class UserEntity extends Equatable {
         updatedAt,
       ];
 }
+

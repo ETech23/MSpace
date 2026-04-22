@@ -1,0 +1,232 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How MSpace Works | Find and Book Artisans in Nigeria</title>
+  <link rel="canonical" href="https://naco-d2738.web.app/how-it-works.html">
+  <meta name="description" content="Find trusted artisans near you in Nigeria. MSpace helps you hire professionals, book services, and connect with skilled workers easily.">
+  <meta name="keywords" content="find artisans near me, hire artisans Nigeria, book artisans, electrician near me, plumber near me, MSpace app">
+  <meta name="author" content="Emmanuel Ogbaa">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-2: #f5f8ff;
+      --card: #ffffff;
+      --accent: #1a73e8;
+      --accent-2: #0b57d0;
+      --text: #0b1a2a;
+      --muted: #52606d;
+      --border: rgba(10, 35, 64, 0.12);
+      --soft: rgba(26, 115, 232, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Trebuchet MS", "Segoe UI", Tahoma, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+    }
+    a { color: inherit; text-decoration: none; }
+    .container { max-width: 980px; margin: 0 auto; padding: 28px; }
+    header {
+      display: grid; grid-template-columns: auto 1fr auto;
+      align-items: center; gap: 16px; padding: 6px 0 20px; border-bottom: 1px solid var(--border);
+    }
+    .brand { font-weight: 700; letter-spacing: 0.5px; color: var(--accent-2); }
+    .badge { font-size: 12px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); background: var(--bg-2); }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .nav-links a { color: var(--accent-2); font-weight: 600; font-size: 13px; }
+    .nav-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      color: var(--accent-2);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .nav-toggle span { display: block; width: 18px; height: 2px; background: var(--accent-2); position: relative; }
+    .nav-toggle span::before, .nav-toggle span::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      width: 18px;
+      height: 2px;
+      background: var(--accent-2);
+    }
+    .nav-toggle span::before { top: -6px; }
+    .nav-toggle span::after { top: 6px; }
+    .hero { padding: 28px 0 6px; }
+    .hero h1 { font-size: 36px; margin: 0 0 10px; }
+    .hero p { color: var(--muted); font-size: 17px; margin: 0; }
+
+    .blog {
+      display: grid;
+      grid-template-columns: 2.2fr 1fr;
+      gap: 20px;
+      padding: 22px 0 6px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 8px 22px rgba(26, 115, 232, 0.06);
+    }
+    .card h2 { margin: 0 0 10px; font-size: 20px; color: var(--accent-2); }
+    .card p { color: var(--muted); margin: 0 0 12px; line-height: 1.7; }
+    .list { margin: 0; padding-left: 18px; color: var(--muted); line-height: 1.8; }
+    .chip {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--accent-2);
+      font-size: 12px;
+      margin-bottom: 10px;
+      background: var(--soft);
+    }
+    .cta {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 10px 16px; border-radius: 10px; border: 1px solid transparent;
+      font-weight: 600; letter-spacing: 0.2px; background: var(--accent); color: #ffffff;
+    }
+    .note {
+      background: var(--bg-2);
+      border: 1px dashed var(--border);
+      padding: 12px;
+      border-radius: 12px;
+      color: var(--muted);
+      margin-top: 12px;
+    }
+    footer {
+      margin-top: 20px; border-top: 1px solid var(--border); padding: 16px 0; color: var(--muted);
+      display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center;
+    }
+    @media (max-width: 900px) {
+      header { grid-template-columns: 1fr auto; align-items: center; }
+      .nav-toggle { display: inline-flex; }
+      .nav-links {
+        display: none;
+        grid-column: 1 / -1;
+        flex-direction: column;
+        align-items: flex-start;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+      }
+      body.nav-open .nav-links { display: flex; }
+      .blog { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a class="brand" href="/index.html">MSpace</a>
+      <nav class="nav-links">
+        <a href="/how-it-works.html">How It Works</a>
+        <a href="/benefits.html">Benefits</a>
+        <a href="/guide.html">Guide</a>
+        <a href="/faq.html">FAQ</a>
+        <a href="/testimonials.html">Testimonials</a>
+        <a href="/screenshots.html">Screenshots</a>
+        <a href="/blog.html">Blog</a>
+      </nav>
+      <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false"><span></span></button>
+      <div class="badge">Find, Book, and Grow</div>
+    </header>
+
+    <section class="hero">
+      <h1>How MSpace Works</h1>
+      <p>MSpace helps you find artisans near you in Nigeria and book artisans online with confidence. This guide explains the full flow for customers, artisans, and business accounts so you know exactly how to hire artisans in Nigeria without stress.</p>
+    </section>
+
+    <section class="blog">
+      <article class="card">
+        <span class="chip">For Customers</span>
+        <h2>Find, compare, and book in minutes</h2>
+        <p>Customers open MSpace and immediately see nearby professionals, including electricians, plumbers, and other essential services. The platform organizes artisans by service category and distance so you can find artisans near me Nigeria, browse quickly, and still make an informed decision.</p>
+        <p>When you open a profile, you see the artisan or business details, ratings, reviews, and verified status. This gives you a clear view of quality before you chat or book. Once you decide, you can message inside the app to confirm pricing, availability, or special requests. The booking flow keeps everything documented and gives you updates as the job moves forward.</p>
+        <ul class="list">
+          <li>Search by category and location to see nearby professionals.</li>
+          <li>Review profiles, ratings, and experience before choosing.</li>
+          <li>Chat in-app to confirm scope, budget, and timing.</li>
+          <li>Book the service and receive real-time updates.</li>
+          <li>Leave a review after completion to help others decide.</li>
+        </ul>
+        <div class="note">Tip: Save favorites so you can quickly rebook trusted artisans for future jobs.</div>
+      </article>
+
+      <aside class="card">
+        <span class="chip">Quick Summary</span>
+        <p>MSpace makes discovery fast, communication simple, and booking reliable for everyone. It is built for transparency, safety, and repeat use.</p>
+        <a class="cta" href="https://play.google.com/store/apps/details?id=com.mspace.app">Download the App</a>
+      </aside>
+
+      <article class="card">
+        <span class="chip">For Artisans</span>
+        <h2>Showcase your skills and grow a reputation</h2>
+        <p>Artisans create a professional profile that highlights their skills, experience, and service area. This helps customers understand what you do and trust your work.</p>
+        <p>Once your profile is live, you start receiving job requests from nearby customers. You can accept, chat, and manage bookings right inside the app. Every completed job adds to your reputation through ratings and reviews, which improves your visibility in search.</p>
+        <ul class="list">
+          <li>Create a professional profile with services and photos.</li>
+          <li>Get discovered by nearby customers looking for your skills.</li>
+          <li>Manage bookings, messages, and updates in one place.</li>
+          <li>Build trust with verified status and strong reviews.</li>
+          <li>Grow repeat customers and expand your network.</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <span class="chip">For Businesses</span>
+        <h2>Manage teams and expand your reach</h2>
+        <p>Business accounts are designed for teams and service companies. You can showcase your company profile, list multiple service categories, and define coverage areas so customers know what you offer.</p>
+        <p>Businesses can receive larger job requests, coordinate with team members, and build credibility through consistent reviews. This creates a professional presence that goes beyond a single artisan profile.</p>
+        <ul class="list">
+          <li>Present a company profile with team size and branding.</li>
+          <li>List services and coverage areas clearly for clients.</li>
+          <li>Manage communication and bookings in one place.</li>
+          <li>Build long-term trust with reviews and reliability.</li>
+        </ul>
+      </article>
+    </section>
+
+    <footer>
+      <div>MSpace — Find, Book Artisans</div>
+      <div class="links">
+        <a href="/index.html">Home</a>
+        <a href="/benefits.html">Benefits</a>
+        <a href="/guide.html">Guide</a>
+        <a href="/privacy-policy.html">Privacy</a>
+      </div>
+    </footer>
+  </div>
+  <script>
+    (function () {
+      const toggle = document.querySelector('.nav-toggle');
+      const links = document.querySelectorAll('.nav-links a');
+      if (!toggle) return;
+      toggle.addEventListener('click', () => {
+        document.body.classList.toggle('nav-open');
+        const expanded = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', String(!expanded));
+      });
+      links.forEach((link) =>
+        link.addEventListener('click', () => {
+          document.body.classList.remove('nav-open');
+          toggle.setAttribute('aria-expanded', 'false');
+        })
+      );
+    })();
+  </script>
+</body>
+</html>
+

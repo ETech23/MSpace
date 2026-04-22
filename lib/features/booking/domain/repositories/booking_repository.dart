@@ -48,3 +48,4 @@ abstract class BookingRepository {
     required String userType,
   });
 }
+

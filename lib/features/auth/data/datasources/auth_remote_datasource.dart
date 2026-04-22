@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/error/exceptions.dart';
 import '../models/user_model.dart';
 import '../../../../core/services/location_helper.dart';
+import '../../../../core/services/referral_service.dart';
 
 abstract class AuthRemoteDataSource {
   Future<UserModel> register({
@@ -16,6 +17,8 @@ abstract class AuthRemoteDataSource {
     required String name,
     required String phone,
     required String userType,
+    String? referralCode,
+    String? referralSource,
   });
 
   Future<UserModel> login({
@@ -23,7 +26,7 @@ abstract class AuthRemoteDataSource {
     required String password,
   });
 
-  Future<UserModel> loginWithGoogle();
+  Future<UserModel> loginWithGoogle({String? preferredUserType});
   Future<UserModel> loginWithApple();
   Future<void> logout();
   Future<UserModel?> getCurrentUser();
@@ -47,6 +50,7 @@ abstract class AuthRemoteDataSource {
 
   Future<void> updateUserType(String userId, String newType);
   Future<void> createArtisanProfileIfNeeded(String userId);
+  Future<void> createBusinessProfileIfNeeded(String userId, {String? businessName});
   Future<void> requestAccountDeletion({required String reason});
 }
 
@@ -99,7 +103,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     return fields;
   }
 
-  Future<UserModel> _getOrCreateOAuthUserProfile(User supabaseUser) async {
+  Future<UserModel> _getOrCreateOAuthUserProfile(
+    User supabaseUser, {
+    String? preferredUserType,
+  }) async {
     final userId = supabaseUser.id;
     final existingProfile =
         await client.from('users').select().eq('id', userId).maybeSingle();
@@ -123,19 +130,32 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     }
 
     final metadata = supabaseUser.userMetadata ?? <String, dynamic>{};
+    final resolvedUserType = (preferredUserType != null &&
+            preferredUserType.trim().isNotEmpty)
+        ? preferredUserType.trim()
+        : 'customer';
     final created = <String, dynamic>{
       'id': userId,
       'email': supabaseUser.email ?? '',
       'name': (metadata['full_name'] as String?) ??
           (metadata['name'] as String?) ??
           ((supabaseUser.email ?? 'User').split('@').first),
-      'user_type': 'customer',
+      'user_type': resolvedUserType,
       'photo_url': metadata['avatar_url'],
       'created_at': DateTime.now().toIso8601String(),
     };
     created.addAll(await _buildLocationFields());
 
     await client.from('users').upsert(created);
+    if (resolvedUserType == 'artisan' || resolvedUserType == 'business') {
+      await createArtisanProfileIfNeeded(userId);
+    }
+    if (resolvedUserType == 'business') {
+      await createBusinessProfileIfNeeded(
+        userId,
+        businessName: created['name'] as String?,
+      );
+    }
     return UserModel.fromJson(created);
   }
 
@@ -146,6 +166,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String name,
     required String phone,
     required String userType,
+    String? referralCode,
+    String? referralSource,
   }) async {
     try {
       print('📝 Starting registration for: $email');
@@ -217,8 +239,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         // Non-fatal — continue
       }
 
-      // 6️⃣ Create artisan profile if needed
-      if (userType == 'artisan') {
+      // 6️⃣ Create artisan/business profiles if needed
+      if (userType == 'artisan' || userType == 'business') {
         try {
           final existingProfile = await client
               .from('artisan_profiles')
@@ -246,6 +268,51 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         } catch (e) {
           print('⚠️ Error creating artisan profile: $e');
         }
+      }
+
+      if (userType == 'business') {
+        try {
+          final existingBusiness = await client
+              .from('business_profiles')
+              .select('user_id')
+              .eq('user_id', userId)
+              .maybeSingle();
+
+          if (existingBusiness == null) {
+            await client.from('business_profiles').insert({
+              'user_id': userId,
+              'business_name': name,
+              'service_categories': <String>[],
+              'team_size': null,
+              'coverage_area': null,
+              'logo_url': null,
+              'description': null,
+              'contact_phone': phone,
+            });
+            print('✅ Business profile created');
+          }
+        } catch (e) {
+          print('⚠️ Error creating business profile: $e');
+        }
+      }
+
+      // 6.5️⃣ Ensure referral code + record attribution
+      final referralService = ReferralService(client);
+      try {
+        await referralService.ensureReferralCode(userId);
+        final code = referralCode?.trim();
+        if (code != null && code.isNotEmpty) {
+          final referrerId = await referralService.resolveReferrerId(code);
+          if (referrerId != null && referrerId != userId) {
+            await referralService.recordAttribution(
+              referrerId: referrerId,
+              referredUserId: userId,
+              source: referralSource ?? 'manual',
+            );
+          }
+        }
+      } catch (e) {
+        print('⚠️ Referral attribution failed: $e');
       }
 
       // 7️⃣ Fetch final user data — use maybeSingle() to avoid coercion crash.
@@ -390,7 +457,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }
 
   @override
-  Future<UserModel> loginWithGoogle() async {
+  Future<UserModel> loginWithGoogle({String? preferredUserType}) async {
     try {
       if (!kIsWeb) {
         if (_googleWebClientId.isEmpty) {
@@ -404,6 +471,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           scopes: const ['email', 'profile'],
           serverClientId: _googleWebClientId,
         );
+
+        // Force account chooser each time.
+        await googleSignIn.signOut();
 
         final googleUser = await googleSignIn.signIn();
         if (googleUser == null) {
@@ -432,7 +502,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           );
         }
 
-        return _getOrCreateOAuthUserProfile(session.user);
+        return _getOrCreateOAuthUserProfile(
+          session.user,
+          preferredUserType: preferredUserType,
+        );
       }
 
       final redirectUrl = _resolveRedirectUrl();
@@ -448,14 +521,20 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       final activeSession = client.auth.currentSession;
       if (activeSession != null) {
-        return _getOrCreateOAuthUserProfile(activeSession.user);
+        return _getOrCreateOAuthUserProfile(
+          activeSession.user,
+          preferredUserType: preferredUserType,
+        );
       }
 
       final session = await client.auth.onAuthStateChange
           .firstWhere((event) => event.session != null)
           .timeout(const Duration(seconds: 90));
 
-      return _getOrCreateOAuthUserProfile(session.session!.user);
+      return _getOrCreateOAuthUserProfile(
+        session.session!.user,
+        preferredUserType: preferredUserType,
+      );
     } on AuthException catch (e) {
       throw ServerException(message: e.message);
     } on PlatformException catch (e) {
@@ -466,7 +545,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       if (isGoogleConfigError) {
         throw const ServerException(
           message:
-              'Google sign-in is not configured correctly for this Android build (ApiException 10). Verify GOOGLE_WEB_CLIENT_ID, package name, and SHA-1/SHA-256 in Firebase/Google Cloud, then update Supabase Google provider client IDs.',
+              'Google sign-in is not configured correctly for this Android build (ApiException 10). Verify GOOGLE_WEB_customer_id, package name, and SHA-1/SHA-256 in Firebase/Google Cloud, then update Supabase Google provider client IDs.',
         );
       }
       throw ServerException(message: 'Google login failed: ${e.message}');
@@ -739,6 +818,35 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }
 
   @override
+  Future<void> createBusinessProfileIfNeeded(String userId, {String? businessName}) async {
+    try {
+      final existingProfile = await client
+          .from('business_profiles')
+          .select('user_id')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (existingProfile != null) return;
+
+      await client.from('business_profiles').insert({
+        'user_id': userId,
+        'business_name': businessName ?? 'Business',
+        'service_categories': <String>[],
+        'team_size': null,
+        'coverage_area': null,
+        'logo_url': null,
+        'description': null,
+        'contact_phone': null,
+      });
+    } on PostgrestException catch (e) {
+      throw ServerException(message: e.message);
+    } catch (e) {
+      throw ServerException(
+          message: 'Failed to create business profile: ${e.toString()}');
+    }
+  }
+
+  @override
   Future<void> requestAccountDeletion({required String reason}) async {
     try {
       final user = client.auth.currentUser;
@@ -780,3 +888,5 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     }
   }
 }
+
+

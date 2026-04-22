@@ -222,7 +222,7 @@ class _CreateReviewScreenState extends ConsumerState<CreateReviewScreen> {
       final success = await ref.read(reviewProvider.notifier).createReview(
             bookingId: widget.bookingId,
             artisanId: widget.artisanId,
-            clientId: user.id,
+            customerId: user.id,
             rating: _rating,
             comment: _commentController.text.trim().isEmpty
                 ? null

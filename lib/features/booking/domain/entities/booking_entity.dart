@@ -18,7 +18,7 @@ enum PaymentStatus {
 
 class BookingEntity {
   final String id;
-  final String clientId; // Match your existing code
+  final String customerId; // Match your existing code
   final String artisanId;
   final String artisanProfileId;
   final String serviceType;
@@ -63,7 +63,7 @@ class BookingEntity {
 
   BookingEntity({
     required this.id,
-    required this.clientId,
+    required this.customerId,
     required this.artisanId,
     required this.artisanProfileId,
     required this.serviceType,
@@ -103,7 +103,7 @@ class BookingEntity {
 
   BookingEntity copyWith({
     String? id,
-    String? clientId,
+    String? customerId,
     String? artisanId,
     String? artisanProfileId,
     String? serviceType,
@@ -142,7 +142,7 @@ class BookingEntity {
   }) {
     return BookingEntity(
       id: id ?? this.id,
-      clientId: clientId ?? this.clientId,
+      customerId: customerId ?? this.customerId,
       artisanId: artisanId ?? this.artisanId,
       artisanProfileId: artisanProfileId ?? this.artisanProfileId,
       serviceType: serviceType ?? this.serviceType,
@@ -181,3 +181,4 @@ class BookingEntity {
     );
   }
 }
+

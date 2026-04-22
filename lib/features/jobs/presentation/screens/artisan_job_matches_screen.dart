@@ -43,7 +43,7 @@ class _ArtisanJobMatchesScreenState extends ConsumerState<ArtisanJobMatchesScree
           children: [
             Text('Job: ${match.job?.title}'),
             const SizedBox(height: 8),
-            Text('Customer: ${match.job?.customerName ?? 'Unknown'}'),
+            Text('Client: ${match.job?.customerName ?? 'Unknown'}'),
             const SizedBox(height: 8),
             Text('Distance: ${match.distanceKm.toStringAsFixed(1)}km away'),
             const SizedBox(height: 16),
@@ -74,7 +74,7 @@ class _ArtisanJobMatchesScreenState extends ConsumerState<ArtisanJobMatchesScree
                   const SizedBox(height: 8),
                   Text(
                     '• A booking will be created\n'
-                    '• Customer will be notified\n'
+                    '• Client will be notified\n'
                     '• Manage it in your bookings',
                     style: TextStyle(
                       fontSize: 12,
@@ -431,7 +431,7 @@ class _JobMatchCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // Customer info
+            // Client info
             if (job.customerName != null) ...[
               Divider(height: 1, color: colorScheme.outline.withOpacity(0.2)),
               const SizedBox(height: 12),
@@ -597,3 +597,5 @@ class _EmptyState extends StatelessWidget {
     );
   }
 }
+
+

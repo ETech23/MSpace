@@ -10,7 +10,7 @@ import '../../../../core/error/exceptions.dart';
 
 abstract class JobRemoteDataSource {
   Future<JobModel> postJob(JobFormModel form, String customerId);
-  Future<List<JobModel>> getCustomerJobs(String customerId);
+  Future<List<JobModel>> getcustomerJobs(String customerId);
   Future<JobModel> getJobById(String jobId);
   Future<List<JobMatchModel>> getArtisanJobMatches(String artisanId);
   Future<JobModel> acceptJob(String jobId, String artisanId);
@@ -27,16 +27,17 @@ class JobRemoteDataSourceImpl implements JobRemoteDataSource {
   @override
   Future<JobModel> postJob(JobFormModel form, String customerId) async {
     try {
-      print('📝 Posting job for customer: $customerId');
+      // DB column names are fixed; do not rename (customer_id in DB).
+      print('📝 Posting job for Client: $customerId');
       
-      final customerRow = await supabaseClient
+      final ClientRow = await supabaseClient
           .from('users')
           .select('moderation_status')
           .eq('id', customerId)
           .maybeSingle();
-      final customerStatus =
-          (customerRow?['moderation_status'] as String?) ?? 'active';
-      if (customerStatus != 'active') {
+      final Clientstatus =
+          (ClientRow?['moderation_status'] as String?) ?? 'active';
+      if (Clientstatus != 'active') {
         throw const ServerException(
           message: 'Your account is restricted from posting jobs at this time.',
         );
@@ -111,14 +112,14 @@ Future<void> _createJobNotifications({
       return;
     }
 
-    // Get customer name (tolerate missing customer)
-    final customerResponse = await supabaseClient
+    // Get Client name (tolerate missing Client)
+    final ClientResponse = await supabaseClient
         .from('users')
         .select('name')
         .eq('id', jobResponse['customer_id'])
         .maybeSingle();
 
-    final customerName = customerResponse != null ? (customerResponse['name'] as String) : 'Customer';
+    final customerName = ClientResponse != null ? (ClientResponse['name'] as String) : 'Client';
     final jobTitle = jobResponse['title'] as String;
     final category = jobResponse['category'] as String;
     final budgetMin = jobResponse['budget_min'];
@@ -416,7 +417,7 @@ List<String> _tokenizeServiceQuery(String value) {
   double _toRadians(double degree) => degree * (math.pi / 180);
 
   @override
-  Future<List<JobModel>> getCustomerJobs(String customerId) async {
+  Future<List<JobModel>> getcustomerJobs(String customerId) async {
     try {
       final response = await supabaseClient
           .from('jobs')
@@ -472,19 +473,19 @@ List<String> _tokenizeServiceQuery(String value) {
           continue;
         }
 
-        // Fetch customer details (tolerate missing customer)
-        final customerResponse = await supabaseClient
+        // Fetch Client details (tolerate missing Client)
+        final ClientResponse = await supabaseClient
             .from('users')
             .select('name, photo_url')
             .eq('id', job.customerId)
             .maybeSingle();
 
-        final jobWithCustomer = job.copyWith(
-          customerName: customerResponse != null ? customerResponse['name'] as String? : null,
-          customerPhotoUrl: customerResponse != null ? customerResponse['photo_url'] as String? : null,
+        final jobWithClient = job.copyWith(
+          customerName: ClientResponse != null ? ClientResponse['name'] as String? : null,
+          customerPhotoUrl: ClientResponse != null ? ClientResponse['photo_url'] as String? : null,
         );
 
-        match['job'] = jobWithCustomer;
+        match['job'] = jobWithClient;
         matches.add(JobMatchModel.fromJson(match));
       }
 
@@ -738,7 +739,7 @@ Future<String> _createBookingFromJob(JobModel job, String artisanId) async {
     
     // Create the booking
     final bookingData = {
-      'client_id': job.customerId,
+      'customer_id': job.customerId,
       'artisan_id': artisanId,
       'artisan_profile_id': artisanProfile['id'],
       'service_type': job.category,
@@ -792,6 +793,9 @@ Future<String> _createBookingFromJob(JobModel job, String artisanId) async {
     }
   }
 }
+
+
+
 
 
 

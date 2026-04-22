@@ -1,5 +1,6 @@
 // lib/features/reviews/presentation/screens/user_reviews_screen.dart
 import 'package:flutter/material.dart';
+import '../../../../core/constants/role_labels.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -20,11 +21,11 @@ class _UserReviewsScreenState extends ConsumerState<UserReviewsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(authProvider).user;
       if (user != null) {
-        if (user.userType == 'artisan') {
+        if (user.userType == 'artisan' || user.userType == 'business') {
           // Load reviews received as an artisan
           ref.read(reviewProvider.notifier).loadArtisanReviews(user.id);
         } else {
-          // Load reviews given as a customer
+          // Load reviews given as a Client
           ref.read(reviewProvider.notifier).loadUserReviews(user.id);
         }
       }
@@ -43,7 +44,7 @@ class _UserReviewsScreenState extends ConsumerState<UserReviewsScreen> {
       );
     }
 
-    final isArtisan = user.userType == 'artisan';
+    final isArtisan = user.userType == 'artisan' || user.userType == 'business';
 
     return Scaffold(
       appBar: AppBar(
@@ -140,7 +141,7 @@ class _UserReviewsScreenState extends ConsumerState<UserReviewsScreen> {
             const SizedBox(height: 12),
             Text(
               isArtisan
-                  ? 'Complete more jobs to receive reviews from your customers.'
+                  ? 'Complete more jobs to receive reviews from your ${RoleLabels.client}s.'
                   : 'Book and complete services to leave reviews for artisans.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -267,7 +268,7 @@ class _UserReviewsScreenState extends ConsumerState<UserReviewsScreen> {
               ),
             ],
 
-            // Actions for customer reviews
+            // Actions for Client reviews
             if (!isArtisan) ...[
               const SizedBox(height: 12),
               Row(
@@ -434,3 +435,4 @@ class _UserReviewsScreenState extends ConsumerState<UserReviewsScreen> {
     }
   }
 }
+

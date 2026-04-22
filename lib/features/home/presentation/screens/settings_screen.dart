@@ -1,7 +1,6 @@
 // lib/features/home/presentation/screens/settings_screen.dart
 import 'dart:convert';
 
-import 'package:artisan_marketplace/core/services/notification_service.dart';
 import 'package:artisan_marketplace/core/services/location_service.dart';
 import 'package:artisan_marketplace/core/services/update_user_location.dart';
 import 'package:flutter/material.dart';
@@ -85,9 +84,9 @@ class SettingsScreen extends ConsumerWidget {
                       _SettingsItem(
                         icon: Icons.notifications_rounded,
                         label: 'Notifications',
-                        subtitle: 'Manage notification preferences',
+                        subtitle: 'Manage push, email, booking, and message alerts',
                         color: const Color(0xFF1565C0),
-                        onTap: () => _showNotificationSettings(context, ref),
+                        onTap: () => context.push('/profile/notifications'),
                       ),
                       _SettingsItem(
                         icon: Icons.brightness_6_rounded,
@@ -109,6 +108,32 @@ class SettingsScreen extends ConsumerWidget {
                         subtitle: 'Use saved location or refresh now',
                         color: const Color(0xFFEF6C00),
                         onTap: () => _showLocationSourceSheet(context, ref),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Growth
+                  _SectionLabel(label: 'Growth'),
+                  const SizedBox(height: 10),
+                  _SettingsCard(
+                    colorScheme: colorScheme,
+                    isDark: isDark,
+                    items: [
+                      _SettingsItem(
+                        icon: Icons.card_giftcard_rounded,
+                        label: 'Invite Friends',
+                        subtitle: 'Share your referral link',
+                        color: const Color(0xFF00897B),
+                        onTap: () => context.push('/referrals'),
+                      ),
+                      _SettingsItem(
+                        icon: Icons.leaderboard_rounded,
+                        label: 'Referral Leaderboard',
+                        subtitle: 'See top referrers',
+                        color: const Color(0xFF5E35B1),
+                        onTap: () => context.push('/referrals/leaderboard'),
                       ),
                     ],
                   ),
@@ -248,7 +273,7 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Naco v1.0.0',
+                        'MSpace v1.0.2',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -276,60 +301,6 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   // ── Helper dialogs ──────────────────────────────────────────────────────────
-
-  void _showNotificationSettings(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 36, height: 4,
-                  decoration: BoxDecoration(
-                      color: cs.onSurfaceVariant.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 20),
-              Text('Notifications',
-                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
-              Text('Enable notifications to get updates about your bookings and messages.',
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    final ok = await NotificationService().initialize();
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(ok ? 'Notifications enabled!' : 'Failed to enable notifications')));
-                    }
-                  },
-                  style: FilledButton.styleFrom(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 14)),
-                  child: const Text('Enable Notifications'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel')),
-              ),
-            ]),
-          ),
-        );
-      },
-    );
-  }
 
   String _themeModeSubtitle(ThemeMode mode) {
     switch (mode) {
@@ -526,7 +497,7 @@ class SettingsScreen extends ConsumerWidget {
         UserLocationPayload(
           userId: user.id,
           locationResult: result,
-          isArtisan: user.userType == 'artisan',
+        isArtisan: user.isArtisan,
         ),
       );
       await ref.read(authProvider.notifier).refreshUser();
@@ -629,7 +600,7 @@ class SettingsScreen extends ConsumerWidget {
       final reviews = await supabase
           .from('reviews')
           .select()
-          .or('client_id.eq.${user.id},artisan_id.eq.${user.id}');
+          .or('customer_id.eq.${user.id},artisan_id.eq.${user.id}');
 
       final exportPayload = {
         'exported_at': DateTime.now().toIso8601String(),
@@ -888,6 +859,7 @@ class _SettingsRow extends StatelessWidget {
     );
   }
 }
+
 
 
 

@@ -377,7 +377,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Complete Job'),
         content: const Text(
-          'Mark this booking as completed? The customer will be able to leave a review.',
+          'Mark this booking as completed? The Client will be able to leave a review.',
         ),
         actions: [
           TextButton(
@@ -484,7 +484,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     // Determine user role in this booking
     final booking = widget.booking ?? currentBooking;
     final isArtisan = booking != null && user != null && booking.artisanId == user.id;
-    final isCustomer = booking != null && user != null && booking.clientId == user.id;
+    final isClient = booking != null && user != null && booking.customerId == user.id;
 
     // Listen for state changes
     ref.listen<BookingState>(bookingProvider, (previous, next) {
@@ -552,7 +552,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     // User information for display
     final displayName = isArtisan ? booking.customerName : booking.artisanName;
     final displayPhotoUrl = isArtisan ? booking.customerPhotoUrl : booking.artisanPhotoUrl;
-    final userRole = isArtisan ? 'Service Provider' : 'Customer';
+    final userRole = isArtisan ? 'Service Provider' : 'Client';
 
     return Scaffold(
       appBar: AppBar(
@@ -585,7 +585,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   isArtisan: isArtisan,
   onProfileTap: () {
     // Step 1: Determine which user we're viewing
-    final viewingUserId = isArtisan ? booking.clientId : booking.artisanId;
+    final viewingUserId = isArtisan ? booking.customerId : booking.artisanId;
     
     // Step 2: Check if that user IS the artisan in this booking
     // (They might be viewing from different contexts)
@@ -598,7 +598,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     );
   },
   onMessageTap: () {
-  final otherUserId = isArtisan ? booking.clientId : booking.artisanId;
+  final otherUserId = isArtisan ? booking.customerId : booking.artisanId;
   final otherUserName = displayName ?? 'User';
   final otherUserPhotoUrl = displayPhotoUrl;
   
@@ -609,6 +609,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 _buildLocationDetails(booking, theme, colorScheme),
                 if (booking.customerNotes != null)
                   _buildAdditionalNotes(booking, theme, colorScheme),
+                _buildInvoiceSection(
+                  booking: booking,
+                  isArtisan: isArtisan,
+                  isClient: isClient,
+                  theme: theme,
+                  colorScheme: colorScheme,
+                  context: context,
+                ),
                 _buildDisputeSection(booking, theme, colorScheme),
                 _buildStatusTimeline(booking, theme, colorScheme),
                 const SizedBox(height: 100),
@@ -640,7 +648,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         context: context,
         booking: booking,
         isArtisan: isArtisan,
-        isCustomer: isCustomer,
+        isClient: isClient,
         theme: theme,
         colorScheme: colorScheme,
       ),
@@ -798,7 +806,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                isArtisan ? 'Customer Information' : 'Artisan Information',
+                isArtisan ? 'Client Information' : 'Artisan Information',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -1193,6 +1201,71 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     );
   }
 
+  Widget _buildInvoiceSection({
+    required BookingEntity booking,
+    required bool isArtisan,
+    required bool isClient,
+    required ThemeData theme,
+    required ColorScheme colorScheme,
+    required BuildContext context,
+  }) {
+    if (booking.status == BookingStatus.cancelled) {
+      return const SizedBox.shrink();
+    }
+
+    final label = isArtisan ? 'Create Invoice' : 'View Invoice';
+    final subtitle = isArtisan
+        ? 'Generate, print, or share a PDF invoice for this booking.'
+        : 'View and save a PDF invoice for this booking.';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outline.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.receipt_long, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Invoice',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(subtitle, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: () =>
+                context.push('/bookings/${booking.id}/invoice', extra: booking),
+            icon: const Icon(Icons.picture_as_pdf),
+            label: Text(label),
+            style: FilledButton.styleFrom(
+              backgroundColor: colorScheme.primaryContainer,
+              foregroundColor: colorScheme.onPrimaryContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDisputeSection(
     BookingEntity booking,
     ThemeData theme,
@@ -1315,7 +1388,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     required BuildContext context,
     required BookingEntity booking,
     required bool isArtisan,
-    required bool isCustomer,
+    required bool isClient,
     required ThemeData theme,
     required ColorScheme colorScheme,
   }) {
@@ -1380,8 +1453,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         default:
           return null;
       }
-    } else if (isCustomer) {
-      // Customer actions based on booking status
+    } else if (isClient) {
+      // Client actions based on booking status
       if (booking.status == BookingStatus.pending ||
           booking.status == BookingStatus.accepted) {
         buttons = [
@@ -1404,7 +1477,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         return null;
       }
     } else {
-      // User is neither artisan nor customer in this booking
+      // User is neither artisan nor Client in this booking
       return null;
     }
 
@@ -1620,6 +1693,8 @@ class _InAppLocationMapScreen extends StatelessWidget {
     );
   }
 }
+
+
 
 
 

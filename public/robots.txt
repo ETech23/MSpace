@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Sitemap: https://naco-d2738.web.app/sitemap.xml
+Sitemap: https://naco-d2738.web.app/sitemap-profiles.xml

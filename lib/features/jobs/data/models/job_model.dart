@@ -81,6 +81,7 @@ class JobModel {
   });
 
   factory JobModel.fromJson(Map<String, dynamic> json) {
+    // DB column names are fixed; do not rename (customer_id in DB).
     return JobModel(
       id: json['id'] as String,
       customerId: json['customer_id'] as String,
@@ -496,3 +497,5 @@ DateTime _parseServerTimestamp(String value) {
   final normalized = hasTimezone ? trimmed : '${trimmed}Z';
   return DateTime.parse(normalized).toLocal();
 }
+
+

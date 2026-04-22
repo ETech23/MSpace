@@ -86,10 +86,13 @@ with base as (
   from public.artisan_profiles ap
   join public.users u
     on u.id = ap.user_id
+  left join public.user_settings us
+    on us.user_id = ap.user_id
   where coalesce(u.user_type, '') = 'artisan'
     and coalesce(u.is_active, true) = true
     and coalesce(ap.is_active, true) = true
     and coalesce(ap.premium, false) = true
+    and coalesce(us.profile_visible, true) = true
 ),
 scored as (
   select

@@ -55,7 +55,13 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
 
       final rows = (response as List).cast<Map<String, dynamic>>();
       if (rows.isEmpty) return [];
-      return rows.map(ArtisanModel.fromJson).toList();
+      final visibleUserIds = await _getVisibleUserIds(
+        rows.map((row) => row['user_id']?.toString() ?? ''),
+      );
+      final filteredRows = rows
+          .where((row) => visibleUserIds.contains(row['user_id']?.toString() ?? ''))
+          .toList();
+      return filteredRows.map(ArtisanModel.fromJson).toList();
     } on PostgrestException catch (e) {
       // Fallback for environments that don't have the RPC deployed yet.
       if ((e.code == '42883' || e.message.contains('get_featured_artisans_v2'))) {
@@ -84,10 +90,14 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
         .map((a) => a['user_id'] as String)
         .toSet()
         .toList();
+    final visibleUserIds = await _getVisibleUserIds(userIds);
+    if (visibleUserIds.isEmpty) {
+      return [];
+    }
 
     final usersResponse = await supabaseClient.rpc(
       'get_users_with_location',
-      params: {'user_ids': userIds},
+      params: {'user_ids': visibleUserIds.toList()},
     );
 
     final usersMap = Map<String, Map<String, dynamic>>.fromEntries(
@@ -99,13 +109,16 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
 
     final mergedData = artisanRows.map((artisanMap) {
       final userId = artisanMap['user_id'] as String;
+      if (!visibleUserIds.contains(userId)) {
+        return null;
+      }
       final user = usersMap[userId];
 
       return <String, dynamic>{
         ...artisanMap,
         'users': user,
       };
-    }).toList();
+    }).whereType<Map<String, dynamic>>().toList();
 
     return mergedData.map((json) => ArtisanModel.fromJson(json)).toList();
   }
@@ -151,10 +164,14 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
             .map((item) => (item as Map<String, dynamic>)['user_id'] as String)
             .toSet()
             .toList();
+        final visibleUserIds = await _getVisibleUserIds(userIds);
+        if (visibleUserIds.isEmpty) {
+          return [];
+        }
 
         final usersResponse = await supabaseClient.rpc(
           'get_users_with_location',
-          params: {'user_ids': userIds},
+          params: {'user_ids': visibleUserIds.toList()},
         );
 
         print('📊 Got ${(usersResponse as List).length} user records');
@@ -184,6 +201,9 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
           try {
             final artisanJson = artisanData as Map<String, dynamic>;
             final userId = artisanJson['user_id'] as String;
+            if (!visibleUserIds.contains(userId)) {
+              continue;
+            }
             final userJson = usersMap[userId];
             
             if (userJson == null) {
@@ -262,10 +282,14 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
         .map((a) => (a as Map<String, dynamic>)['user_id'] as String)
         .toSet()
         .toList();
+    final visibleUserIds = await _getVisibleUserIds(userIds);
+    if (visibleUserIds.isEmpty) {
+      return [];
+    }
 
     final usersResponse = await supabaseClient.rpc(
       'get_users_with_location',
-      params: {'user_ids': userIds},
+      params: {'user_ids': visibleUserIds.toList()},
     );
 
     print('📊 Got ${(usersResponse as List).length} user records');
@@ -293,6 +317,9 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
       try {
         final artisanJson = artisanData as Map<String, dynamic>;
         final userId = artisanJson['user_id'] as String;
+        if (!visibleUserIds.contains(userId)) {
+          continue;
+        }
         final userJson = usersMap[userId];
         
         if (userJson == null) {
@@ -475,10 +502,14 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
           .map((a) => (a as Map<String, dynamic>)['user_id'] as String)
           .toSet()
           .toList();
+      final visibleUserIds = await _getVisibleUserIds(userIds);
+      if (visibleUserIds.isEmpty) {
+        return [];
+      }
 
       final usersResponse = await supabaseClient.rpc(
         'get_users_with_location', 
-        params: {'user_ids': userIds}
+        params: {'user_ids': visibleUserIds.toList()}
       );
 
       final usersMap = Map<String, Map<String, dynamic>>.fromEntries(
@@ -491,13 +522,16 @@ class ArtisanRemoteDataSourceImpl implements ArtisanRemoteDataSource {
       final mergedData = (artisansResponse as List).map((artisan) {
         final artisanMap = artisan as Map<String, dynamic>;
         final userId = artisanMap['user_id'] as String;
+        if (!visibleUserIds.contains(userId)) {
+          return null;
+        }
         final user = usersMap[userId];
         
         return <String, dynamic>{
           ...artisanMap,
           'users': user,
         };
-      }).toList();
+      }).whereType<Map<String, dynamic>>().toList();
 
       print('✅ Search found: ${mergedData.length} artisans');
       return mergedData.map((json) => ArtisanModel.fromJson(json)).toList();
@@ -527,6 +561,10 @@ Future<ArtisanModel> getArtisanById(String id) async {
 
     final artisanMap = artisanResponse;
     final userId = artisanMap['user_id'] as String;
+    final isVisible = await _isUserProfileVisible(userId);
+    if (!isVisible) {
+      throw const ServerException(message: 'This profile is currently hidden.');
+    }
 
     final usersResponse = await supabaseClient.rpc(
       'get_users_with_location', 
@@ -549,5 +587,34 @@ Future<ArtisanModel> getArtisanById(String id) async {
     print('❌ Get by ID error: $e');
     throw ServerException(message: 'Failed to load artisan details: $e');
   }
-}
+  }
+
+  Future<Set<String>> _getVisibleUserIds(Iterable<String> userIds) async {
+    final ids = userIds.where((id) => id.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) {
+      return <String>{};
+    }
+
+    try {
+      final response = await supabaseClient
+          .from('user_settings')
+          .select('user_id, profile_visible')
+          .inFilter('user_id', ids);
+
+      final hiddenIds = (response as List)
+          .where((row) => row['profile_visible'] == false)
+          .map((row) => row['user_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      return ids.where((id) => !hiddenIds.contains(id)).toSet();
+    } catch (_) {
+      return ids.toSet();
+    }
+  }
+
+  Future<bool> _isUserProfileVisible(String userId) async {
+    final visibleUserIds = await _getVisibleUserIds([userId]);
+    return visibleUserIds.contains(userId);
+  }
 }

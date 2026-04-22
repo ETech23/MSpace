@@ -26,7 +26,7 @@ class _MyJobsScreenState extends ConsumerState<MyJobsScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(authProvider).user;
       if (user != null) {
-        ref.read(jobProvider.notifier).loadCustomerJobs(user.id);
+        ref.read(jobProvider.notifier).loadcustomerJobs(user.id);
       }
     });
   }
@@ -126,7 +126,7 @@ class _MyJobsScreenState extends ConsumerState<MyJobsScreen>
       onRefresh: () async {
         final user = ref.read(authProvider).user;
         if (user != null) {
-          await ref.read(jobProvider.notifier).loadCustomerJobs(user.id);
+          await ref.read(jobProvider.notifier).loadcustomerJobs(user.id);
         }
       },
       child: ListView.separated(
@@ -508,7 +508,7 @@ class _EmptyState extends StatelessWidget {
   String _getMessage(String type) {
     switch (type) {
       case 'active':
-        return 'Post your first job to find skilled artisans';
+        return 'Post your first job to reach skilled artisans and businesses';
       case 'completed':
         return 'Completed jobs will appear here';
       case 'cancelled':
@@ -530,5 +530,7 @@ class _StatusConfig {
     required this.label,
   });
 }
+
+
 
 

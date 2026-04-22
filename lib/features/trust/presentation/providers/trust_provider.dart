@@ -204,9 +204,19 @@ final disputesByBookingProvider =
   );
 });
 
+final disputeDetailsProvider =
+    FutureProvider.family<DisputeEntity, String>((ref, disputeId) async {
+  final repository = ref.watch(trustRepositoryProvider);
+  final result = await repository.getDisputeById(disputeId);
+  return result.fold(
+    (failure) => throw Exception(failure.message),
+    (item) => item,
+  );
+});
+
 final adminDisputesProvider = FutureProvider<List<DisputeEntity>>((ref) async {
   final repository = ref.watch(trustRepositoryProvider);
-final result = await repository.adminListDisputes(status: 'open');
+  final result = await repository.adminListDisputes();
   return result.fold(
     (failure) => throw Exception(failure.message),
     (items) => items,

@@ -1,6 +1,6 @@
 // lib/features/trust/data/repositories/trust_repository_impl.dart
 // COMPLETE UNIVERSAL VERIFICATION VERSION
-// Supports verification for BOTH artisans and customers
+// Supports verification for BOTH artisans and Clients
 
 import 'dart:io';
 import 'package:dartz/dartz.dart';
@@ -163,7 +163,7 @@ class TrustRepositoryImpl implements TrustRepository {
           .single();
 
       final isArtisan = (userRow['user_type'] as String?) == 'artisan';
-      print('   User Type: ${isArtisan ? "ARTISAN" : "CUSTOMER"}');
+      print('   User Type: ${isArtisan ? "ARTISAN" : "Client"}');
 
       if (isArtisan) {
         final artisanProfile = await supabaseClient
@@ -411,6 +411,26 @@ class TrustRepositoryImpl implements TrustRepository {
           .toList();
 
       return Right(disputes);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, DisputeEntity>> getDisputeById(String disputeId) async {
+    try {
+      final response = await supabaseClient
+          .from('disputes')
+          .select()
+          .eq('id', disputeId)
+          .maybeSingle();
+
+      if (response == null) {
+        return Left(ServerFailure(message: 'Dispute not found.'));
+      }
+
+      return Right(
+          DisputeModel.fromJson(Map<String, dynamic>.from(response)));
     } catch (e) {
       return Left(ServerFailure(message: e.toString()));
     }
@@ -759,6 +779,7 @@ class TrustRepositoryImpl implements TrustRepository {
       await _updateDisputeStatusWithFallback(
         disputeId: disputeId,
         status: normalizedStatus,
+        actorId: actorId,
         note: note,
       );
 
@@ -795,6 +816,7 @@ class TrustRepositoryImpl implements TrustRepository {
   Future<void> _updateDisputeStatusWithFallback({
     required String disputeId,
     required String status,
+    required String actorId,
     String? note,
   }) async {
     final candidates = <String>[status];
@@ -813,6 +835,10 @@ class TrustRepositoryImpl implements TrustRepository {
           'resolved_at': candidate.startsWith('resolved')
               ? DateTime.now().toIso8601String()
               : null,
+          'resolved_by': candidate.startsWith('resolved')
+              ? actorId
+              : null,
+          'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', disputeId);
         return;
       } catch (e) {
@@ -1005,16 +1031,17 @@ class TrustRepositoryImpl implements TrustRepository {
     required String openedBy,
   }) async {
     try {
+      // DB column names are fixed; do not rename (client_id in bookings DB).
       final booking = await supabaseClient
           .from('bookings')
           .select('client_id,artisan_id')
           .eq('id', bookingId)
           .single();
 
-      final clientId = booking['client_id'] as String?;
+      final customerId = booking['client_id'] as String?;
       final artisanId = booking['artisan_id'] as String?;
       final recipientIds = <String>{
-        if (clientId != null) clientId,
+        if (customerId != null) customerId,
         if (artisanId != null) artisanId,
       }..remove(openedBy);
 
@@ -1024,10 +1051,12 @@ class TrustRepositoryImpl implements TrustRepository {
           'title': 'Dispute opened',
           'body': 'A dispute was opened for one of your bookings.',
           'type': 'system',
+          'related_id': disputeId,
           'read': false,
           'data': {
-            'action': 'open_booking',
+            'action': 'open_dispute',
             'bookingId': bookingId,
+            'disputeId': disputeId,
             'type': 'dispute',
             'subType': 'opened',
             'relatedId': disputeId,
@@ -1048,6 +1077,7 @@ class TrustRepositoryImpl implements TrustRepository {
           'title': 'New dispute opened',
           'body': 'A new dispute requires moderation review.',
           'type': 'system',
+          'related_id': disputeId,
           'read': false,
           'data': {
             'action': 'open_notifications',
@@ -1093,11 +1123,13 @@ class TrustRepositoryImpl implements TrustRepository {
           'title': title,
           'body': body,
           'type': 'system',
+          'related_id': disputeId,
           'read': false,
           'data': {
-            'action': 'open_booking',
+            'action': 'open_dispute',
             'bookingId': bookingId,
             'type': 'dispute',
+            'disputeId': disputeId,
             'relatedId': disputeId,
           },
           'created_at': DateTime.now().toIso8601String(),
@@ -1176,3 +1208,5 @@ class TrustRepositoryImpl implements TrustRepository {
     }
   }
 }
+
+

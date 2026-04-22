@@ -273,3 +273,5 @@ abstract class _JobState implements JobState {
   _$$JobStateImplCopyWith<_$JobStateImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
+
+

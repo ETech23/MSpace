@@ -138,6 +138,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
     try {
       final model = PrivacySettingsModel(
         profileVisible: settings.profileVisible,
+        webProfileVisible: settings.webProfileVisible,
         showEmail: settings.showEmail,
         showPhone: settings.showPhone,
         showAddress: settings.showAddress,

@@ -109,6 +109,7 @@ class _DisputeHearingScreenState extends ConsumerState<DisputeHearingScreen>
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
     final isAdmin = user?.userType == 'admin';
+    final disputeAsync = ref.watch(disputeDetailsProvider(widget.disputeId));
     final messagesAsync = ref.watch(disputeMessagesProvider(widget.disputeId));
     final eventsAsync = ref.watch(disputeEventsProvider(widget.disputeId));
     final isBusy = ref.watch(disputeHearingActionProvider).isLoading;
@@ -123,7 +124,19 @@ class _DisputeHearingScreenState extends ConsumerState<DisputeHearingScreen>
         appBar: _buildAppBar(),
         body: Column(
           children: [
-            _MetaStrip(bookingId: widget.bookingId, disputeId: widget.disputeId),
+            _MetaStrip(
+              bookingId: widget.bookingId,
+              disputeId: widget.disputeId,
+              status: disputeAsync.maybeWhen(
+                data: (d) => d.status,
+                orElse: () => null,
+              ),
+            ),
+            disputeAsync.when(
+              data: (dispute) => _DisputeSummary(dispute: dispute),
+              loading: () => const _SummaryLoading(),
+              error: (err, _) => _SummaryError(error: err.toString()),
+            ),
             _buildTabBar(),
             Expanded(
               child: TabBarView(
@@ -217,8 +230,13 @@ class _DisputeHearingScreenState extends ConsumerState<DisputeHearingScreen>
 class _MetaStrip extends StatelessWidget {
   final String bookingId;
   final String disputeId;
+  final String? status;
 
-  const _MetaStrip({required this.bookingId, required this.disputeId});
+  const _MetaStrip({
+    required this.bookingId,
+    required this.disputeId,
+    required this.status,
+  });
 
   static const _bg = Color(0xFF0D0E11);
   static const _border = Color(0xFF252830);
@@ -228,6 +246,10 @@ class _MetaStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final statusLabel = (status ?? '...').replaceAll('_', ' ').toUpperCase();
+    final bookingLabel = bookingId.isEmpty
+        ? '—'
+        : (bookingId.length >= 8 ? bookingId.substring(0, 8) : bookingId);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
       decoration: const BoxDecoration(
@@ -236,9 +258,9 @@ class _MetaStrip extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _chip(Icons.receipt_long_outlined, 'BKG', bookingId.substring(0, 8).toUpperCase()),
+          _chip(Icons.receipt_long_outlined, 'BKG', bookingLabel.toUpperCase()),
           const SizedBox(width: 16),
-          _chip(Icons.circle, 'STATUS', 'OPEN', dotColor: Color(0xFFE2FF5D)),
+          _chip(Icons.circle, 'STATUS', statusLabel, dotColor: Color(0xFFE2FF5D)),
         ],
       ),
     );
@@ -279,6 +301,195 @@ class _MetaStrip extends StatelessWidget {
           ),
         ],
       );
+}
+
+class _DisputeSummary extends StatelessWidget {
+  final dynamic dispute;
+
+  const _DisputeSummary({required this.dispute});
+
+  static const _surface = Color(0xFF161820);
+  static const _border = Color(0xFF252830);
+  static const _textPrimary = Color(0xFFF0F1F5);
+  static const _textSecondary = Color(0xFF6B7080);
+  static const _accent = Color(0xFFE2FF5D);
+  static const _mono = 'monospace';
+
+  void _openEvidence(BuildContext context, String url) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        backgroundColor: Colors.black,
+        child: InteractiveViewer(
+          child: Image.network(
+            url,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Padding(
+              padding: EdgeInsets.all(24),
+              child: Icon(Icons.broken_image_outlined, color: _textSecondary),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final evidence = (dispute.evidenceUrls as List?)?.map((e) => e.toString()).toList() ?? const [];
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'DISPUTE SUMMARY',
+            style: TextStyle(
+              color: _textSecondary,
+              fontSize: 9,
+              fontFamily: _mono,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            dispute.reason as String,
+            style: const TextStyle(
+              color: _textPrimary,
+              fontSize: 12.5,
+              height: 1.55,
+            ),
+          ),
+          if (evidence.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.attach_file, size: 12, color: _textSecondary),
+                const SizedBox(width: 4),
+                Text(
+                  '${evidence.length} EVIDENCE',
+                  style: const TextStyle(
+                    color: _textSecondary,
+                    fontSize: 9,
+                    fontFamily: _mono,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 64,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: evidence.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (ctx, i) => GestureDetector(
+                  onTap: () => _openEvidence(context, evidence[i]),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image.network(
+                      evidence[i],
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (_, child, progress) => progress == null
+                          ? child
+                          : Container(
+                              width: 64,
+                              height: 64,
+                              alignment: Alignment.center,
+                              color: _border,
+                              child: const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.2,
+                                  color: _accent,
+                                ),
+                              ),
+                            ),
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 64,
+                        height: 64,
+                        color: _border,
+                        child: const Icon(Icons.broken_image_outlined,
+                            color: _textSecondary, size: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryLoading extends StatelessWidget {
+  const _SummaryLoading();
+
+  static const _border = Color(0xFF252830);
+  static const _surface = Color(0xFF161820);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _border),
+      ),
+      child: const SizedBox(
+        height: 56,
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 1.4),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryError extends StatelessWidget {
+  final String error;
+
+  const _SummaryError({required this.error});
+
+  static const _border = Color(0xFF252830);
+  static const _surface = Color(0xFF161820);
+  static const _danger = Color(0xFFFF5D7E);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _border),
+      ),
+      child: Text(
+        'Failed to load dispute summary: $error',
+        style: const TextStyle(color: _danger, fontSize: 11),
+      ),
+    );
+  }
 }
 
 // ── Timeline tab ──────────────────────────────────────────────────────────────
@@ -468,6 +679,7 @@ class _StatementCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final evidence = (message.evidenceUrls as List?)?.map((e) => e.toString()).toList() ?? const [];
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -518,6 +730,31 @@ class _StatementCard extends StatelessWidget {
               height: 1.55,
             ),
           ),
+          if (evidence.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: evidence
+                  .map((url) => ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Image.network(
+                          url,
+                          width: 64,
+                          height: 64,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 64,
+                            height: 64,
+                            color: _border,
+                            child: const Icon(Icons.broken_image_outlined,
+                                color: _textSecondary, size: 18),
+                          ),
+                        ),
+                      ))
+                  .toList(growable: false),
+            ),
+          ],
         ],
       ),
     );

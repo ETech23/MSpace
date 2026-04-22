@@ -1,0 +1,41 @@
+{
+  "prepared_on": "2026-03-09",
+  "app_name": "MSpace",
+  "track": "closed_testing_to_production",
+  "how_i_recruited_testers": {
+    "answer": "I recruited testers from my target users in Nigeria: customers who regularly hire local service providers and artisans who offer services on mobile. I invited them through direct outreach in existing WhatsApp/Telegram community groups and personal referrals, then onboarded them with a simple test guide. I intentionally included both customer and artisan roles so we could validate the full two-sided marketplace flow end-to-end (signup, profile setup, discovery, chat, booking, payment flow, and completion)."
+  },
+  "how_testers_used_the_app": {
+    "answer": "Testers used the app in realistic scenarios instead of one-time installs. They created accounts, set up profiles, searched for services, started chats, created bookings, and progressed bookings through status updates. We also tested location-dependent discovery, push notifications, and trust/safety flows (reporting and dispute pathways). This gave us repeated usage across core journeys and helped us identify issues affecting real transactions and communication."
+  },
+  "feedback_i_received": {
+    "answer": "The most consistent feedback was about reliability and clarity: timely notification delivery, smoother booking status transitions, clearer permission prompts (especially location/notifications), and better confidence signals around provider verification and disputes. Testers also asked for cleaner handling of edge cases like reconnecting after weak network and preventing duplicate/conflicting states during active bookings."
+  },
+  "what_i_changed_from_feedback": {
+    "answer": "
+    Based on tester feedback, I focused on stability, trust, and UX. I improved notification and webhook handling to reduce missed or duplicate events. I tightened booking and payment state handling with stronger backend consistency checks. I refined the location update flow and permission nudges to reduce onboarding friction. I strengthened trust and safety tools, including identity verification and dispute/admin review flows. I also applied database hotfixes, indexing, and validation updates to improve reliability under real usage. After these changes, I re-tested the core journeys with testers and saw more consistent completion of chat-to-booking workflows."
+  },
+  "why_app_is_ready_for_production": {
+    "answer": "
+    The app is ready for production because core journeys were validated in closed testing with both sides of the marketplace and improved from feedback. The build now prioritizes reliability in onboarding, discovery, chat, booking, notifications, and trust/safety."
+  },
+  "intended_audience_value_installs": {
+    "intended_audience": "People who need local services and the artisans who offer them in Nigeria. It suits users who want quick, trusted help for home, repairs, or small jobs and providers who want steady work from mobile.",
+    "value_to_users": "Users can discover nearby artisans, compare profiles, chat, book, and pay in one place. Verified providers, clear status updates, and dispute support make hiring safer and more reliable.",
+    "expected_installs_first_year": "I expect about 5,000 installs in the first year, based on early testing interest, local demand for services, and a focused rollout in target cities."
+  },
+  "optional_metrics_to_fill_before_submit": {
+    "instructions": "Replace placeholders with your exact values from Play Console/testing notes before submitting.",
+    "fields": {
+      "total_testers_invited": "[fill_me]",
+      "active_testers_14_days": "[fill_me_min_12]",
+      "countries_or_regions_tested": "[fill_me]",
+      "number_of_feedback_items_logged": "[fill_me]",
+      "high_priority_issues_fixed": "[fill_me]",
+      "current_open_blockers": "[fill_me_or_none]"
+    }
+  },
+  "short_version_if_character_limit_is_strict": {
+    "answer": "I recruited real target users (customers and artisans) through community outreach and referrals, then ran closed testing on complete marketplace journeys: onboarding, discovery, chat, booking, notifications, and trust/safety actions. Feedback focused on reliability (notifications, booking status consistency, permissions clarity), and I implemented fixes in backend/event handling, location/permission UX, and trust/safety flows. The current build reflects these fixes and has been re-tested on real scenarios, so it is ready for production."
+  }
+}

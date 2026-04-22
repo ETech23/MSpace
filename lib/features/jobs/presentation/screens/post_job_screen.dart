@@ -139,7 +139,7 @@ class _PostJobScreenState extends ConsumerState<PostJobScreen> {
       context,
       title: 'Allow location for job posting?',
       message:
-          'We need your location to match your job request with nearby artisans.',
+          'We only need your location once to match your job request with nearby artisans.',
       primaryLabel: 'Allow location',
       secondaryLabel: 'Not now',
     );
@@ -214,7 +214,7 @@ Future<void> _submitJob() async {
     await Future.delayed(const Duration(seconds: 3));
     
     // ✅ RELOAD job to get updated notified_artisan_count
-    await ref.read(jobProvider.notifier).loadCustomerJobs(user.id);
+    await ref.read(jobProvider.notifier).loadcustomerJobs(user.id);
     final updatedJob = ref.read(jobProvider).customerJobs
         .firstWhere((j) => j.id == job.id, orElse: () => job);
     
@@ -655,3 +655,5 @@ Future<bool?> _showSuccessDialog(JobModel job) async {
     );
   }
 }
+
+

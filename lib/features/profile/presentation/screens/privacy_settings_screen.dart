@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../domain/entities/privacy_settings_entity.dart';
 import '../providers/profile_provider.dart';
 
 class PrivacySettingsScreen extends ConsumerStatefulWidget {
@@ -33,8 +34,9 @@ class _PrivacySettingsScreenState
     final colorScheme = theme.colorScheme;
     final settingsState = ref.watch(settingsProvider);
     final settings = settingsState.privacySettings;
+    final isSaving = settingsState.isLoading && settings != null;
 
-    if (settingsState.isLoading) {
+    if (settingsState.isLoading && settings == null) {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Privacy & Security'),
@@ -70,10 +72,18 @@ class _PrivacySettingsScreenState
       appBar: AppBar(
         title: const Text('Privacy & Security'),
         centerTitle: true,
+        bottom: isSaving
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(2),
+                child: LinearProgressIndicator(minHeight: 2),
+              )
+            : null,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: IgnorePointer(
+        ignoring: isSaving,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
           // Header
           Container(
             padding: const EdgeInsets.all(16),
@@ -101,7 +111,7 @@ class _PrivacySettingsScreenState
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Manage who can see your information',
+                        'Choose what people can discover in-app and on the web',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -119,17 +129,27 @@ class _PrivacySettingsScreenState
           _buildSettingCard(
             context: context,
             title: 'Profile Visible',
-            subtitle: 'Make your profile visible to others',
+            subtitle: 'Show your profile inside the app and discovery results',
             icon: Icons.visibility,
             value: settings.profileVisible,
             iconColor: colorScheme.primary,
-            onChanged: (value) {
-              final updated = settings.copyWith(profileVisible: value);
-              ref.read(settingsProvider.notifier).updatePrivacySettings(
-                    ref.read(authProvider).user!.id,
-                    updated,
-                  );
-            },
+            onChanged: (value) => _updatePrivacySettings(
+              settings.copyWith(profileVisible: value),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildSettingCard(
+            context: context,
+            title: 'Web Profile Visible',
+            subtitle: 'Allow your public profile page to appear online and in Google',
+            icon: Icons.public,
+            value: settings.webProfileVisible,
+            iconColor: Colors.teal,
+            onChanged: (value) => _updatePrivacySettings(
+              settings.copyWith(webProfileVisible: value),
+            ),
           ),
 
           const SizedBox(height: 16),
@@ -150,17 +170,13 @@ class _PrivacySettingsScreenState
           _buildSettingCard(
             context: context,
             title: 'Show Email',
-            subtitle: 'Display your email address on your profile',
+            subtitle: 'Display your email address on your public web profile',
             icon: Icons.email_outlined,
             value: settings.showEmail,
             iconColor: Colors.blue,
-            onChanged: (value) {
-              final updated = settings.copyWith(showEmail: value);
-              ref.read(settingsProvider.notifier).updatePrivacySettings(
-                    ref.read(authProvider).user!.id,
-                    updated,
-                  );
-            },
+            onChanged: (value) => _updatePrivacySettings(
+              settings.copyWith(showEmail: value),
+            ),
           ),
 
           const SizedBox(height: 12),
@@ -169,17 +185,13 @@ class _PrivacySettingsScreenState
           _buildSettingCard(
             context: context,
             title: 'Show Phone Number',
-            subtitle: 'Display your phone number on your profile',
+            subtitle: 'Display your phone number on your public web profile',
             icon: Icons.phone_outlined,
             value: settings.showPhone,
             iconColor: Colors.green,
-            onChanged: (value) {
-              final updated = settings.copyWith(showPhone: value);
-              ref.read(settingsProvider.notifier).updatePrivacySettings(
-                    ref.read(authProvider).user!.id,
-                    updated,
-                  );
-            },
+            onChanged: (value) => _updatePrivacySettings(
+              settings.copyWith(showPhone: value),
+            ),
           ),
 
           const SizedBox(height: 12),
@@ -188,17 +200,13 @@ class _PrivacySettingsScreenState
           _buildSettingCard(
             context: context,
             title: 'Show Address',
-            subtitle: 'Display your address on your profile',
+            subtitle: 'Display your address on your public web profile',
             icon: Icons.location_on_outlined,
             value: settings.showAddress,
             iconColor: Colors.orange,
-            onChanged: (value) {
-              final updated = settings.copyWith(showAddress: value);
-              ref.read(settingsProvider.notifier).updatePrivacySettings(
-                    ref.read(authProvider).user!.id,
-                    updated,
-                  );
-            },
+            onChanged: (value) => _updatePrivacySettings(
+              settings.copyWith(showAddress: value),
+            ),
           ),
 
           const SizedBox(height: 24),
@@ -235,6 +243,7 @@ class _PrivacySettingsScreenState
             onTap: () => _showDeleteAccountDialog(context),
           ),
         ],
+        ),
       ),
     );
   }
@@ -413,6 +422,27 @@ class _PrivacySettingsScreenState
             child: const Text('Delete'),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _updatePrivacySettings(PrivacySettingsEntity settings) async {
+    final user = ref.read(authProvider).user;
+    if (user == null) {
+      return;
+    }
+    final success = await ref
+        .read(settingsProvider.notifier)
+        .updatePrivacySettings(user.id, settings);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success ? 'Privacy settings updated.' : 'Failed to update settings.',
+        ),
+        backgroundColor: success ? Colors.green : Colors.red,
       ),
     );
   }

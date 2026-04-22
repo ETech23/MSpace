@@ -14,6 +14,8 @@ class RegisterUseCase {
     required String name,
     required String phone,
     required String userType,
+    String? referralCode,
+    String? referralSource,
     double? latitude,   // ✅ ADD
     double? longitude,  // ✅ ADD
     String? address,    // ✅ ADD
@@ -24,6 +26,8 @@ class RegisterUseCase {
       name: name,
       phone: phone,
       userType: userType,
+      referralCode: referralCode,
+      referralSource: referralSource,
       latitude: latitude,
       longitude: longitude,
       address: address,

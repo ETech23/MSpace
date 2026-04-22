@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MSpace Profile</title>
+  <meta name="description" content="View this profile on MSpace.">
+  <link rel="canonical" href="https://naco-d2738.web.app/profile.html">
+  <meta name="robots" content="index, follow">
+  <meta property="og:type" content="profile">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-2: #f5f8ff;
+      --card: #ffffff;
+      --accent: #1a73e8;
+      --accent-2: #0b57d0;
+      --text: #0b1a2a;
+      --muted: #52606d;
+      --border: rgba(10, 35, 64, 0.12);
+      --soft: rgba(26, 115, 232, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Trebuchet MS", "Segoe UI", Tahoma, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+    }
+    a { color: inherit; text-decoration: none; }
+    .container { max-width: 980px; margin: 0 auto; padding: 28px; }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0 18px; border-bottom: 1px solid var(--border);
+    }
+    .brand { font-weight: 700; letter-spacing: 0.5px; color: var(--accent-2); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(15, 30, 60, 0.06);
+      margin-top: 24px;
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 999px; font-size: 12px;
+      background: var(--soft); color: var(--accent-2); font-weight: 600;
+    }
+    .title { font-size: 28px; font-weight: 700; margin: 12px 0 8px; }
+    .subtitle { color: var(--muted); line-height: 1.5; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-top: 18px; }
+    .stat {
+      padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border);
+      background: var(--bg-2);
+    }
+    .stat b { display: block; margin-bottom: 6px; }
+    .cta {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: var(--accent); color: white; padding: 12px 18px;
+      border-radius: 12px; font-weight: 700; margin-top: 16px;
+    }
+    .muted { color: var(--muted); }
+    .error { color: #b00020; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">MSpace</div>
+      <a class="cta" href="https://naco-d2738.web.app/">Visit MSpace</a>
+    </header>
+
+    <div class="card" id="profile-card">
+      <div class="pill" id="profile-type">Loading profile...</div>
+      <div class="title" id="profile-name">Please wait</div>
+      <div class="subtitle" id="profile-summary"></div>
+
+      <div class="grid" id="profile-meta"></div>
+
+      <div id="profile-description" class="subtitle" style="margin-top: 16px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://pbkoxrobqltdyoaemgez.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBia294cm9icWx0ZHlvYWVtZ2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIyNTMwODcsImV4cCI6MjA3NzgyOTA4N30.yf2uLwtsgTt0uY5W5M2oBPUYqaZLjXvnXLCFORDf1lE';
+
+    function getProfileId() {
+      // First try query parameter (highest priority)
+      const params = new URLSearchParams(window.location.search);
+      const idFromQuery = params.get('id');
+      if (idFromQuery && idFromQuery.trim()) {
+        console.log('Profile ID from query param:', idFromQuery);
+        return idFromQuery.trim();
+      }
+      
+      // Then try pathname pattern /p/uuid
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      const pIndex = parts.indexOf('p');
+      if (pIndex >= 0 && parts[pIndex + 1]) {
+        const id = parts[pIndex + 1];
+        console.log('Profile ID from /p/ path:', id);
+        return id;
+      }
+      
+      // Last resort: check if last path segment looks like a UUID
+      if (parts.length > 0) {
+        const lastPart = parts[parts.length - 1];
+        if (lastPart && lastPart !== 'profile.html' && isValidUuid(lastPart)) {
+          console.log('Profile ID from path segment:', lastPart);
+          return lastPart;
+        }
+      }
+      
+      console.error('No valid profile ID found. Pathname:', window.location.pathname, 'Search:', window.location.search);
+      return '';
+    }
+    
+    function isValidUuid(str) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      return uuidRegex.test(str);
+    }
+
+    function setMeta(name, content) {
+      const tag = document.querySelector(`meta[name="${name}"]`);
+      if (tag) tag.setAttribute('content', content);
+    }
+
+    function setCanonicalUrl(profileId) {
+      const canonical = document.querySelector('link[rel="canonical"]');
+      if (canonical && profileId) {
+        canonical.setAttribute('href', `https://naco-d2738.web.app/profile.html?id=${profileId}`);
+      }
+    }
+
+    async function fetchProfile(profileId) {
+      try {
+        console.log('📤 Calling Supabase RPC: get_public_profile with ID:', profileId);
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_public_profile`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({ profile_user_id: profileId })
+        });
+        
+        console.log('📥 Supabase response status:', res.status, res.statusText);
+        
+        if (!res.ok) {
+          console.error(`Supabase API error: ${res.status} ${res.statusText}`);
+          const errorBody = await res.text();
+          console.error('Response body:', errorBody);
+          throw new Error(`API error: ${res.status} ${res.statusText}`);
+        }
+        
+        const data = await res.json();
+        console.log('Parsed response data:', data);
+        
+        if (!data || !data.user_id) {
+          console.error('Profile data is empty or has no user_id. Data:', data);
+          throw new Error('Profile not found - no user_id in response');
+        }
+        return data;
+      } catch (error) {
+        console.error('❌ Failed to fetch profile:', error.message);
+        throw error;
+      }
+    }
+
+    function renderProfile(profile, profileId) {
+      const typeLabel = profile.user_type === 'business' ? 'Business' : 'Artisan';
+      document.getElementById('profile-type').textContent = typeLabel;
+      document.getElementById('profile-name').textContent = profile.display_name || 'MSpace Profile';
+
+      const location = [profile.city, profile.state].filter(Boolean).join(', ');
+      const categoryText = profile.category || (profile.categories ? profile.categories.join(', ') : '');
+      const summary = [
+        categoryText,
+        location ? `Based in ${location}` : null
+      ].filter(Boolean).join(' - ');
+      document.getElementById('profile-summary').textContent = summary || 'Verified on MSpace';
+
+      const meta = [];
+      if (categoryText) meta.push(['Category', categoryText]);
+      if (profile.coverage_area) meta.push(['Coverage', profile.coverage_area]);
+      if (profile.team_size) meta.push(['Team size', profile.team_size]);
+      if (profile.hourly_rate) meta.push(['Hourly rate', `NGN ${profile.hourly_rate}`]);
+      if (profile.skills && profile.skills.length) meta.push(['Skills', profile.skills.join(', ')]);
+      if (profile.email) meta.push(['Email', profile.email]);
+      if (profile.contact_phone) meta.push(['Phone', profile.contact_phone]);
+      if (profile.phone) meta.push(['Phone', profile.phone]);
+      if (profile.address) meta.push(['Address', profile.address]);
+
+      const metaEl = document.getElementById('profile-meta');
+      metaEl.innerHTML = meta.map(([label, value]) => `
+        <div class="stat"><b>${label}</b><span>${value}</span></div>
+      `).join('');
+
+      document.getElementById('profile-description').textContent =
+        profile.description || profile.bio || '';
+
+      const title = `${profile.display_name || 'MSpace'} | MSpace`;
+      document.title = title;
+      setMeta('description', `View ${profile.display_name || 'this profile'} on MSpace.`);
+      
+      // Update canonical URL for proper indexing
+      setCanonicalUrl(profileId);
+      
+      // Set Open Graph meta tags for social sharing
+      if (profile.photo_url || profile.logo_url) {
+        const imageUrl = profile.photo_url || profile.logo_url;
+        let ogImage = document.querySelector('meta[property="og:image"]');
+        if (!ogImage) {
+          ogImage = document.createElement('meta');
+          ogImage.setAttribute('property', 'og:image');
+          document.head.appendChild(ogImage);
+        }
+        ogImage.setAttribute('content', imageUrl);
+      }
+      
+      let ogTitle = document.querySelector('meta[property="og:title"]');
+      if (!ogTitle) {
+        ogTitle = document.createElement('meta');
+        ogTitle.setAttribute('property', 'og:title');
+        document.head.appendChild(ogTitle);
+      }
+      ogTitle.setAttribute('content', title);
+      
+      let ogDescription = document.querySelector('meta[property="og:description"]');
+      if (!ogDescription) {
+        ogDescription = document.createElement('meta');
+        ogDescription.setAttribute('property', 'og:description');
+        document.head.appendChild(ogDescription);
+      }
+      ogDescription.setAttribute('content', `View ${profile.display_name || 'this profile'} on MSpace.`);
+    }
+
+    async function init() {
+      const profileId = getProfileId();
+      console.log('=== Profile Page Init ===');
+      console.log('Current URL:', window.location.href);
+      console.log('Profile ID:', profileId);
+      console.log('Pathname:', window.location.pathname);
+      console.log('Search:', window.location.search);
+      
+      if (!profileId) {
+        console.error('❌ No profile ID could be extracted');
+        document.getElementById('profile-card').innerHTML =
+          '<p class="error">Invalid profile URL. Please provide a valid profile ID (e.g., ?id=user-uuid or /p/user-uuid).</p>';
+        return;
+      }
+      
+      try {
+        console.log('📡 Fetching profile data for ID:', profileId);
+        const profile = await fetchProfile(profileId);
+        if (!profile) {
+          console.error('❌ Profile fetch returned null/empty');
+          throw new Error('Profile not found');
+        }
+        console.log('✅ Profile fetched successfully:', profile.display_name);
+        renderProfile(profile, profileId);
+      } catch (e) {
+        console.error('❌ Error during profile initialization:', e);
+        let errorMsg = 'Profile not found or unavailable.';
+        if (e.message.includes('API error')) {
+          errorMsg = 'Unable to load profile. The service may be temporarily unavailable.';
+        } else if (e.message.includes('Profile not found')) {
+          errorMsg = 'This profile does not exist or has been removed.';
+        }
+        document.getElementById('profile-card').innerHTML =
+          `<p class="error">${errorMsg}</p><p style="font-size: 11px; color: #999; margin-top: 12px;">Debug: ${e.message}</p>`;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../domain/entities/artisan_entity.dart';
 import '../../data/datasources/artisan_remote_datasource.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -14,6 +15,9 @@ import '../../../../core/di/injection_container.dart';
 import '../../../messaging/presentation/screens/chat_screen.dart';
 import '../../../messaging/domain/usecases/get_or_create_conversation_usecase.dart';
 import '../../../../core/ads/ad_widgets.dart';
+import '../../../profile/presentation/providers/business_profile_provider.dart';
+import '../../../../core/services/referral_service.dart';
+import '../../../../core/services/analytics_service.dart';
 
 // Provider to fetch live rating for artisan detail
 final artisanDetailLiveRatingProvider =
@@ -53,6 +57,9 @@ final artisanDetailProvider = FutureProvider.family<ArtisanEntity?, String>((ref
     return null;
   }
 });
+
+final _profileViewLoggedProvider =
+    StateProvider.family<bool, String>((ref, id) => false);
 
 class ArtisanDetailScreen extends ConsumerWidget {
   final String artisanId;
@@ -142,6 +149,26 @@ class ArtisanDetailScreen extends ConsumerWidget {
     final user = ref.watch(authProvider).user;
     final isAuthenticated = ref.watch(authProvider).isAuthenticated;
 
+    ref.listen<AsyncValue<ArtisanEntity?>>(
+      artisanDetailProvider(artisanId),
+      (previous, next) {
+        final logged = ref.read(_profileViewLoggedProvider(artisanId));
+        if (logged) return;
+        next.whenData((artisan) {
+          if (artisan == null) return;
+          ref.read(_profileViewLoggedProvider(artisanId).notifier).state = true;
+          AnalyticsService.instance.logProfileView(
+            profileUserId: artisan.userId,
+            profileType: artisan.userType == 'business' ? 'business' : 'artisan',
+            category: artisan.category,
+            viewerName: user?.name,
+            viewerPhotoUrl: user?.photoUrl,
+            viewerUserType: user?.userType,
+          );
+        });
+      },
+    );
+
     return Scaffold(
       body: artisanAsync.when(
         loading: () {
@@ -196,10 +223,35 @@ class ArtisanDetailScreen extends ConsumerWidget {
             );
           }
 
-          // ✅ CHECK: Is the current user viewing their own profile?
-        final isOwnProfile = user != null && user.id == artisanId;
+          final isBusiness = artisan.userType == 'business';
+          final businessState = isBusiness
+              ? ref.watch(businessProfileProvider(artisanId))
+              : null;
+          final businessProfile = businessState?.profile ?? const <String, dynamic>{};
+          final businessItems = businessState?.items ?? const <Map<String, dynamic>>[];
+          final businessName = businessProfile['business_name']?.toString();
+          final businessDescription = businessProfile['description']?.toString();
+          final businessContactPhone = businessProfile['contact_phone']?.toString();
+          final showBusinessPhone = (businessProfile['show_phone'] as bool?) ?? false;
+          final coverageArea = businessProfile['coverage_area']?.toString();
+          final teamSize = businessProfile['team_size']?.toString();
+          final categories = businessProfile['service_categories'];
+          final serviceCategories = categories is List
+              ? categories.map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
+              : const <String>[];
 
+          final headerName = (isBusiness && businessName != null && businessName.isNotEmpty)
+              ? businessName
+              : artisan.name;
+          final headerCategory = isBusiness
+              ? (serviceCategories.isNotEmpty
+                  ? serviceCategories.first
+                  : (artisan.category.isNotEmpty && artisan.category != 'General'
+                      ? artisan.category
+                      : ''))
+              : artisan.category;
 
+          final isOwnProfile = user != null && user.id == artisanId;
           return CustomScrollView(
             slivers: [
               // App Bar with Image
@@ -307,9 +359,27 @@ Positioned(
                         ),
                         child: const Icon(Icons.share, color: Colors.white),
                       ),
-                      onPressed: () {
-                        final shareText = 'Check out ${artisan.name} on MSpace.'
-                            '${artisan.category.isNotEmpty ? ' ${artisan.category} artisan.' : ''}';
+                      onPressed: () async {
+                        const packageName = 'com.mspace.app';
+                        final baseLink =
+                            'https://play.google.com/store/apps/details?id=$packageName';
+                        final profileLink =
+                            'https://naco-d2738.web.app/p/$artisanId';
+                        String link = baseLink;
+                        if (user != null) {
+                          final referralService =
+                              ReferralService(Supabase.instance.client);
+                          final code =
+                              await referralService.ensureReferralCode(user.id);
+                          link = referralService.buildPlayStoreShareLink(
+                            packageName: packageName,
+                            code: code,
+                          );
+                        }
+                        final shareText = isBusiness
+                            ? 'Check out $headerName on MSpace.\n$profileLink\nGet the app: $link'
+                            : 'Check out ${artisan.name} on MSpace.'
+                                '${artisan.category.isNotEmpty ? ' ${artisan.category} artisan.' : ''}\n$profileLink\nGet the app: $link';
                         Share.share(shareText);
                       },
                     ),
@@ -368,29 +438,50 @@ Positioned(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      artisan.name,
+                                      headerName,
                                       style: theme.textTheme.headlineSmall?.copyWith(
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: colorScheme.primaryContainer,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        artisan.category,
-                                        style: TextStyle(
-                                          color: colorScheme.primary,
-                                          fontWeight: FontWeight.w600,
+                                    if (headerCategory.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.primaryContainer,
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          headerCategory,
+                                          style: TextStyle(
+                                            color: colorScheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                         ),
                                       ),
-                                    ),
+                                    if (isBusiness) ...[
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          'Business',
+                                          style: TextStyle(
+                                            color: Colors.green[700],
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -435,6 +526,32 @@ Positioned(
                             ],
                           ),
                           const SizedBox(height: 20),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                final uri =
+                                    Uri.parse('https://naco-d2738.web.app/p/$artisanId');
+                                if (!await launchUrl(
+                                  uri,
+                                  mode: LaunchMode.externalApplication,
+                                )) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Could not open public profile.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.public_rounded),
+                              label: const Text('Open Public Profile'),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
 
                           // Stats Cards
                           Row(
@@ -529,9 +646,11 @@ Positioned(
                               Expanded(
                                 child: _buildStatCard(
                                   context,
-                                  Icons.work_outline,
-                                  artisan.experienceYears ?? '5+',
-                                  'Years exp.',
+                                  isBusiness ? Icons.groups_outlined : Icons.work_outline,
+                                  isBusiness
+                                      ? (teamSize ?? '—')
+                                      : (artisan.experienceYears ?? '5+'),
+                                  isBusiness ? 'Team size' : 'Years exp.',
                                   colorScheme.primary,
                                 ),
                               
@@ -559,21 +678,23 @@ Positioned(
                     const Divider(height: 1),
 
                     // About Section
-                    if (artisan.bio != null && artisan.bio!.isNotEmpty)
+                    if (isBusiness
+                        ? (businessDescription != null && businessDescription.isNotEmpty)
+                        : (artisan.bio != null && artisan.bio!.isNotEmpty))
                       Padding(
                         padding: const EdgeInsets.all(20),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'About',
+                              isBusiness ? 'About Business' : 'About',
                               style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              artisan.bio!,
+                              isBusiness ? businessDescription! : artisan.bio!,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                                 height: 1.5,
@@ -583,15 +704,17 @@ Positioned(
                         ),
                       ),
 
-                    // Skills Section
-                    if (artisan.skills != null && artisan.skills!.isNotEmpty)
+                    // Skills / Service Categories
+                    if (isBusiness
+                        ? serviceCategories.isNotEmpty
+                        : (artisan.skills != null && artisan.skills!.isNotEmpty))
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Skills',
+                              isBusiness ? 'Service Categories' : 'Skills',
                               style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                               ),
@@ -600,7 +723,7 @@ Positioned(
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
-                              children: artisan.skills!
+                              children: (isBusiness ? serviceCategories : artisan.skills!)
                                   .map((skill) => Chip(
                                         label: Text(skill),
                                         backgroundColor: colorScheme.secondaryContainer,
@@ -610,6 +733,92 @@ Positioned(
                                       ))
                                   .toList(),
                             ),
+                          ],
+                        ),
+                      ),
+
+                    // Items & Services
+                    if (isBusiness && businessItems.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Items & Services',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            ...businessItems.map((item) {
+                              final name = item['name']?.toString() ?? 'Item';
+                              final desc = item['description']?.toString();
+                              final price = item['price']?.toString();
+                              final isActive = item['is_active'] as bool? ?? true;
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: colorScheme.outline.withOpacity(0.1),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            name,
+                                            style: theme.textTheme.titleSmall?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        if (!isActive)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: colorScheme.onSurfaceVariant
+                                                  .withOpacity(0.12),
+                                              borderRadius: BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              'Inactive',
+                                              style: theme.textTheme.labelSmall?.copyWith(
+                                                color: colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    if (desc != null && desc.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        desc,
+                                        style: theme.textTheme.bodySmall,
+                                      ),
+                                    ],
+                                    if (price != null && price.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Price: $price',
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: colorScheme.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }),
                           ],
                         ),
                       ),
@@ -636,14 +845,24 @@ Padding(
           'Address',
           artisan.address!,
         ),
+
+      if (isBusiness && coverageArea != null && coverageArea.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        _buildContactItem(
+          context,
+          Icons.map_outlined,
+          'Coverage Area',
+          coverageArea,
+        ),
+      ],
       
-      if (artisan.phoneNumber != null) ...[
+      if (isBusiness ? (showBusinessPhone && businessContactPhone != null) : artisan.phoneNumber != null) ...[
         const SizedBox(height: 12),
         _buildContactItem(
           context,
           Icons.phone,
           'Phone',
-          artisan.phoneNumber!,
+          (isBusiness ? businessContactPhone : artisan.phoneNumber)!,
         ),
       ],
       
@@ -744,6 +963,7 @@ Padding(
       bottomNavigationBar: artisanAsync.maybeWhen(
         data: (artisan) {
           if (artisan == null) return null;
+          final isBusiness = artisan.userType == 'business';
 
           // Check if user is viewing their own profile
         final isOwnProfile = user != null && user.id == artisanId;
@@ -838,13 +1058,15 @@ Padding(
                     child: FilledButton.icon(
                       onPressed: () {
                         if (!isAuthenticated) {
+                          final actionLabel =
+                              isBusiness ? 'request a quote' : 'book an artisan';
                           // Show login dialog
                           showDialog(
                             context: context,
                             builder: (context) => AlertDialog(
                               title: const Text('Login Required'),
-                              content: const Text(
-                                'You need to login to book an artisan.',
+                              content: Text(
+                                'You need to login to $actionLabel.',
                               ),
                               actions: [
                                 TextButton(
@@ -869,8 +1091,10 @@ Padding(
                         // Navigate to create booking screen with artisan data
                         context.push('/bookings/create', extra: artisan);
                       },
-                      icon: const Icon(Icons.calendar_today),
-                      label: const Text('Book Now'),
+                      icon: Icon(
+                        isBusiness ? Icons.request_quote : Icons.calendar_today,
+                      ),
+                      label: Text(isBusiness ? 'Request Quote' : 'Book Now'),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),

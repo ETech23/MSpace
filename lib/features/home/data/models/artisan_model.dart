@@ -6,6 +6,7 @@ class ArtisanModel extends ArtisanEntity {
     required super.userId,
     required super.name,
     required super.email,
+    super.userType,
     super.phoneNumber,
     super.photoUrl,
     required super.category,
@@ -38,6 +39,7 @@ class ArtisanModel extends ArtisanEntity {
   String email = '';
   String? photoUrl;
   bool? userVerified;
+  String userType = 'artisan';
 
   if (json['users'] != null && json['users'] is Map) {
     final user = json['users'] as Map<String, dynamic>;
@@ -46,6 +48,7 @@ class ArtisanModel extends ArtisanEntity {
     photoUrl = user['photo_url'];
     address = user['address'] as String?;
     userVerified = user['verified'] as bool?;
+    userType = user['user_type'] as String? ?? userType;
     
     // ✅ Now latitude and longitude are direct fields
     lat = (user['latitude'] as num?)?.toDouble();
@@ -59,6 +62,7 @@ class ArtisanModel extends ArtisanEntity {
     userId: json['user_id'] as String,
     name: name,
     email: email,
+    userType: userType,
     phoneNumber: json['phone_number'] as String?,
     photoUrl: photoUrl,
     category: json['category'] as String? ?? 'General',
@@ -115,6 +119,7 @@ class ArtisanModel extends ArtisanEntity {
         userId: userId,
         name: name,
         email: email,
+        userType: userType,
         phoneNumber: phoneNumber,
         photoUrl: photoUrl,
         category: category,

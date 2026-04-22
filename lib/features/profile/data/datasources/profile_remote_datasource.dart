@@ -127,12 +127,23 @@ class ProfileRemoteDataSourceImpl implements ProfileRemoteDataSource {
     NotificationSettingsModel settings,
   ) async {
     try {
-      await supabaseClient.from('user_settings').upsert({
+      final payload = {
         'user_id': userId,
         ...settings.toJson(),
         'updated_at': DateTime.now().toIso8601String(),
-      });
+      };
+      print('🔄 Supabase: Attempting upsert with payload: $payload');
+      await supabaseClient.from('user_settings').upsert(
+        payload,
+        onConflict: 'user_id',
+      );
+      print('✅ Supabase: Notification settings updated successfully');
     } catch (e) {
+      print('❌ Supabase Error: $e');
+      if (e is PostgrestException) {
+        print('❌ PostgreSQL Error: ${e.message}, Code: ${e.code}');
+        throw ServerException(message: 'Database error: ${e.message}');
+      }
       throw ServerException(message: 'Failed to update notification settings: $e');
     }
   }
@@ -149,6 +160,7 @@ class ProfileRemoteDataSourceImpl implements ProfileRemoteDataSource {
       if (response == null) {
         return const PrivacySettingsModel(
           profileVisible: true,
+          webProfileVisible: true,
           showEmail: false,
           showPhone: true,
           showAddress: false,
@@ -167,12 +179,23 @@ class ProfileRemoteDataSourceImpl implements ProfileRemoteDataSource {
     PrivacySettingsModel settings,
   ) async {
     try {
-      await supabaseClient.from('user_settings').upsert({
+      final payload = {
         'user_id': userId,
         ...settings.toJson(),
         'updated_at': DateTime.now().toIso8601String(),
-      });
+      };
+      print('🔄 Supabase: Attempting privacy upsert with payload: $payload');
+      await supabaseClient.from('user_settings').upsert(
+        payload,
+        onConflict: 'user_id',
+      );
+      print('✅ Supabase: Privacy settings updated successfully');
     } catch (e) {
+      print('❌ Supabase Error: $e');
+      if (e is PostgrestException) {
+        print('❌ PostgreSQL Error: ${e.message}, Code: ${e.code}');
+        throw ServerException(message: 'Database error: ${e.message}');
+      }
       throw ServerException(message: 'Failed to update privacy settings: $e');
     }
   }

@@ -97,7 +97,7 @@ class _IdentityVerificationScreenState
       if (photoUrl == null || photoUrl.isEmpty) missing.add('Profile photo');
       if (latitude == null || longitude == null) missing.add('Location coordinates');
 
-      if (userType == 'artisan') {
+      if (userType == 'artisan' || userType == 'business') {
         final artisanRow = await supabase
             .from('artisan_profiles')
             .select('category,bio,skills')
@@ -1087,3 +1087,4 @@ class _IdentityVerificationScreenState
     );
   }
 }
+

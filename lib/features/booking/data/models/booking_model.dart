@@ -3,7 +3,7 @@ import '../../domain/entities/booking_entity.dart';
 class BookingModel extends BookingEntity {
    BookingModel({
     required super.id,
-    required super.clientId,
+    required super.customerId,
     required super.artisanId,
     required super.artisanProfileId,
     required super.serviceType,
@@ -40,15 +40,18 @@ class BookingModel extends BookingEntity {
   });
 
   factory BookingModel.fromJson(Map<String, dynamic> json) {
+    // DB column names are fixed; do not rename (client_id in DB).
     return BookingModel(
       id: json['id'] as String,
-      clientId: json['client_id'] as String,
-      artisanId: json['artisan_id'] as String,
-      artisanProfileId: json['artisan_profile_id'] as String,
-      serviceType: json['service_type'] as String,
-      description: json['description'] as String,
-      scheduledDate: DateTime.parse(json['scheduled_date'] as String),
-      locationAddress: json['location_address'] as String,
+      customerId: (json['client_id'] ?? json['customer_id']) as String? ?? '',
+      artisanId: json['artisan_id'] as String? ?? '',
+      artisanProfileId: json['artisan_profile_id'] as String? ?? '',
+      serviceType: json['service_type'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      scheduledDate: json['scheduled_date'] != null
+          ? DateTime.parse(json['scheduled_date'] as String)
+          : DateTime.fromMillisecondsSinceEpoch(0),
+      locationAddress: json['location_address'] as String? ?? '',
       locationLatitude: (json['location_latitude'] as num?)?.toDouble(),
       preferredTime: json['preferred_time'] as String? ?? '',
       locationLongitude: (json['location_longitude'] as num?)?.toDouble(),
@@ -88,9 +91,10 @@ class BookingModel extends BookingEntity {
   }
 
   Map<String, dynamic> toJson() {
+    // DB column names are fixed; do not rename (client_id in DB).
     return {
       'id': id,
-      'client_id': clientId,
+      'client_id': customerId,
       'artisan_id': artisanId,
       'artisan_profile_id': artisanProfileId,
       'service_type': serviceType,
@@ -180,7 +184,7 @@ class BookingModel extends BookingEntity {
 
   BookingEntity toEntity() => BookingEntity(
         id: id,
-        clientId: clientId,
+        customerId: customerId,
         artisanId: artisanId,
         artisanProfileId: artisanProfileId,
         serviceType: serviceType,
@@ -216,3 +220,4 @@ class BookingModel extends BookingEntity {
         artisanRating: artisanRating,
       );
 }
+

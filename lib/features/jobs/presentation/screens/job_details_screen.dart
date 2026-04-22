@@ -41,15 +41,17 @@ class _JobDetailsScreenState extends ConsumerState<JobDetailsScreen> {
         : null;
 
     final user = ref.read(authProvider).user;
-    final isOwner = user != null && job?.customerId == user.id;
-    final isArtisan = user != null && user.userType == 'artisan';
+    final userId = user?.id;
+    final isOwner = userId != null && job?.customerId == userId;
+    final isArtisan = user?.isArtisan ?? false;
     final jobState = ref.watch(jobProvider);
     final artisanMatch = (isArtisan && job != null)
-        ? (jobState.artisanMatches
-                .where((m) => m.jobId == job.id && m.artisanId == user.id)
-                .isNotEmpty
+        ? (userId != null &&
+                jobState.artisanMatches
+                    .where((m) => m.jobId == job.id && m.artisanId == userId)
+                    .isNotEmpty
             ? jobState.artisanMatches
-                .where((m) => m.jobId == job.id && m.artisanId == user.id)
+                .where((m) => m.jobId == job.id && m.artisanId == userId)
                 .first
             : null)
         : null;
@@ -320,6 +322,7 @@ class _JobDetailsScreenState extends ConsumerState<JobDetailsScreen> {
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () async {
+                          if (userId == null) return;
                           final confirmed = await showDialog<bool>(
                             context: context,
                             builder: (context) => AlertDialog(
@@ -343,7 +346,7 @@ class _JobDetailsScreenState extends ConsumerState<JobDetailsScreen> {
                           if (confirmed == true && mounted) {
                             await ref
                                 .read(jobProvider.notifier)
-                                .rejectJob(job.id, user.id);
+                                .rejectJob(job.id, userId);
                             if (mounted) {
                               context.pop();
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -363,9 +366,10 @@ class _JobDetailsScreenState extends ConsumerState<JobDetailsScreen> {
                       flex: 2,
                       child: FilledButton.icon(
                         onPressed: () async {
+                          if (userId == null) return;
                           final result = await ref
                               .read(jobProvider.notifier)
-                              .acceptJob(job.id, user.id);
+                              .acceptJob(job.id, userId);
                           if (result != null) {
                             if (mounted) {
                               context.pop();
@@ -657,3 +661,6 @@ class _StatusConfig {
     required this.label,
   });
 }
+
+
+

@@ -1,6 +1,7 @@
 // lib/features/trust/presentation/screens/admin_user_management_screen.dart
 
 import 'package:flutter/material.dart';
+import '../../../../core/constants/role_labels.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trust_provider.dart';
 
@@ -178,7 +179,7 @@ class _AdminUserManagementScreenState extends ConsumerState<AdminUserManagementS
                           setState(() => _filterRole = 'artisan');
                           this.setState(() => _filterRole = 'artisan');
                         }),
-                        _buildFilterChip('Customer', _filterRole == 'customer', () {
+                        _buildFilterChip(RoleLabels.client, _filterRole == 'customer', () {
                           setState(() => _filterRole = 'customer');
                           this.setState(() => _filterRole = 'customer');
                         }),
@@ -311,7 +312,7 @@ class _AdminUserManagementScreenState extends ConsumerState<AdminUserManagementS
                         tabs: const [
                           Tab(text: 'All Users'),
                           Tab(text: 'Artisans'),
-                          Tab(text: 'Customers'),
+                          Tab(text: '${RoleLabels.client}s'),
                           Tab(text: 'Flagged'),
                         ],
                       ),
@@ -936,6 +937,7 @@ class _UserDetailsSheet extends StatelessWidget {
     );
   }
 }
+
 
 
 

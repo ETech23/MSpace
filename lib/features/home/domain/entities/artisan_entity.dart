@@ -7,6 +7,7 @@ class ArtisanEntity extends Equatable {
   final String userId;
   final String name;
   final String email;
+  final String userType;
   final String? phoneNumber;
   final String? photoUrl;
   final String category;
@@ -41,6 +42,7 @@ class ArtisanEntity extends Equatable {
     required this.userId,
     required this.name,
     required this.email,
+    this.userType = 'artisan',
     this.phoneNumber,
     this.photoUrl,
     required this.category,
@@ -87,6 +89,7 @@ class ArtisanEntity extends Equatable {
         userId,
         name,
         email,
+        userType,
         phoneNumber,
         photoUrl,
         category,
@@ -119,6 +122,7 @@ class ArtisanEntity extends Equatable {
     String? userId,
     String? name,
     String? email,
+    String? userType,
     String? phoneNumber,
     String? photoUrl,
     String? category,
@@ -150,6 +154,7 @@ class ArtisanEntity extends Equatable {
       userId: userId ?? this.userId,
       name: name ?? this.name,
       email: email ?? this.email,
+      userType: userType ?? this.userType,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       photoUrl: photoUrl ?? this.photoUrl,
       category: category ?? this.category,
@@ -180,6 +185,6 @@ class ArtisanEntity extends Equatable {
 
   @override
   String toString() {
-    return 'ArtisanEntity(id: $id, name: $name, category: $category, city: $displayCity)';
+    return 'ArtisanEntity(id: $id, name: $name, type: $userType, category: $category, city: $displayCity)';
   }
 }

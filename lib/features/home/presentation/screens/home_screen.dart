@@ -30,10 +30,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
+  late final PageController _featuredHeroController;
   final LocationService _locationService = LocationService();
   Timer? _nearbyAutoRefreshTimer;
   Timer? _ipFallbackRetryTimer;
+  Timer? _featuredHeroTimer;
   static const Duration _nearbyAutoRefreshInterval = Duration(seconds: 30);
+  static const Duration _featuredHeroInterval = Duration(seconds: 8);
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -48,6 +51,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   String? _locationSessionKey;
   bool _isInitializingData = false;
   bool _retryLocationOnResume = false;
+  int _featuredHeroIndex = 0;
+  int _featuredHeroCount = 0;
 
   final List<Map<String, dynamic>> _categories = [
     {'name': 'All', 'icon': Icons.apps_rounded},
@@ -65,6 +70,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
+    _featuredHeroController = PageController(viewportFraction: 0.92);
 
     _animationController = AnimationController(
       vsync: this,
@@ -82,8 +88,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
+    _featuredHeroTimer?.cancel();
     _nearbyAutoRefreshTimer?.cancel();
     _ipFallbackRetryTimer?.cancel();
+    _featuredHeroController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -222,7 +230,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             UserLocationPayload(
               userId: currentUser.id,
               locationResult: liveResult,
-              isArtisan: currentUser.userType == 'artisan',
+              isArtisan: currentUser.isArtisan,
             ),
           );
         }
@@ -406,7 +414,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       context,
       title: 'Use your location?',
       message:
-          'We use your location to find artisans near you. You can continue without it.',
+          'We only need your location once to match you with nearby clients and artisans.',
       primaryLabel: 'Use current location',
       secondaryLabel: 'Not now',
     );
@@ -519,6 +527,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  void _configureFeaturedHero(int count) {
+    _pauseFeaturedHero();
+    final nextIndex = count == 0 ? 0 : _featuredHeroIndex.clamp(0, count - 1);
+    setState(() {
+      _featuredHeroCount = count;
+      _featuredHeroIndex = nextIndex;
+    });
+
+    if (count <= 1) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_featuredHeroController.hasClients) return;
+      final currentPage = _featuredHeroController.page?.round() ?? 0;
+      if (currentPage != nextIndex) {
+        _featuredHeroController.jumpToPage(nextIndex);
+      }
+      _resumeFeaturedHero();
+    });
+  }
+
+  void _pauseFeaturedHero() {
+    _featuredHeroTimer?.cancel();
+  }
+
+  void _resumeFeaturedHero() {
+    _featuredHeroTimer?.cancel();
+    if (!mounted || _featuredHeroCount <= 1) {
+      return;
+    }
+
+    _featuredHeroTimer = Timer.periodic(_featuredHeroInterval, (_) {
+      if (!mounted || !_featuredHeroController.hasClients) return;
+      final nextPage = (_featuredHeroIndex + 1) % _featuredHeroCount;
+      _featuredHeroController.animateToPage(
+        nextPage,
+        duration: const Duration(milliseconds: 650),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
   void _ensureLocationResolvedForSession(AuthState authState) {
     final nextSessionKey = authState.user?.id ?? '__guest__';
     if (_locationSessionKey == nextSessionKey) return;
@@ -560,12 +611,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               orElse: () => <String>{},
             );
 
+    // Filter out current user's own profile from feeds
+    final currentUserId = currentUser?.id;
+    final allBlockedAndOwn = {
+      ...blockedUserIds,
+      if (currentUserId != null) currentUserId,
+    };
+
     final filteredFeaturedArtisans = artisanState.featuredArtisans
-        .where((artisan) => !blockedUserIds.contains(artisan.userId))
+        .where((artisan) => !allBlockedAndOwn.contains(artisan.userId))
         .toList(growable: false);
     final filteredNearbyArtisans = artisanState.nearbyArtisans
-        .where((artisan) => !blockedUserIds.contains(artisan.userId))
+        .where((artisan) => !allBlockedAndOwn.contains(artisan.userId))
         .toList(growable: false);
+
+    if (_featuredHeroCount != filteredFeaturedArtisans.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _configureFeaturedHero(filteredFeaturedArtisans.length);
+      });
+    }
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -631,7 +696,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   icon: Icon(Icons.search_rounded,
                       color: colorScheme.onSurfaceVariant, size: 22),
                   onPressed: () => context.push('/search'),
-                  tooltip: 'Search artisans',
+                  tooltip: 'Search artisans and businesses',
                 ),
                 if (!isAuthenticated)
                   Padding(
@@ -746,7 +811,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Find Skilled Artisans',
+                          'Connect with trusted professionals and businesses near you',
                           style: theme.textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.w800,
                             color: colorScheme.onSurface,
@@ -755,7 +820,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Connect with trusted professionals in your area',
+                          'Find services, hire experts, or grow your business — all in one place',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                             height: 1.4,
@@ -764,7 +829,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         const SizedBox(height: 18),
                         FilledButton(
                           onPressed: () => context.push('/register'),
-                          child: const Text('Get Started'),
+                          child: const Text('Explore MSpace'),
                           style: FilledButton.styleFrom(
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12)),
@@ -781,68 +846,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
 
             // ── Featured Artisans Header ──────────────────────────────────────
-            if (filteredFeaturedArtisans.isNotEmpty) ...[
+            if (artisanState.isLoadingFeatured || filteredFeaturedArtisans.isNotEmpty)
               SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(6, 24, 6, 12),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.star_rounded,
-                            color: Colors.amber, size: 16),
-                      ),
-                      const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Featured Artisans',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.3,
-                              color: colorScheme.onSurface,
-                            ),
-                          ),
-                          Text(
-                            'Top-rated professionals',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                child: _buildFeaturedHeroSection(
+                  theme: theme,
+                  colorScheme: colorScheme,
+                  artisanState: artisanState,
+                  featuredArtisans: filteredFeaturedArtisans,
+                  cardColor: cardColor,
                 ),
               ),
-
-              // Featured Artisans List
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 210,
-                  child: artisanState.isLoadingFeatured
-                      ? _buildShimmerList(cardColor)
-                      : ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          physics: const BouncingScrollPhysics(),
-                          itemCount: filteredFeaturedArtisans.length,
-                          itemBuilder: (context, index) => Padding(
-                            padding: const EdgeInsets.only(right: 12),
-                            child: FeaturedArtisanCard(
-                              artisan: filteredFeaturedArtisans[index],
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-            ],
 
             // ── Nearby Artisans Header ────────────────────────────────────────
             SliverToBoxAdapter(
@@ -865,7 +878,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Artisans Near You',
+                            'Near You',
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.3,
@@ -944,7 +957,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: colorScheme.surfaceVariant.withOpacity(0.5),
+                            color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
@@ -1119,6 +1132,129 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  Widget _buildFeaturedHeroSection({
+    required ThemeData theme,
+    required ColorScheme colorScheme,
+    required ArtisanState artisanState,
+    required List<dynamic> featuredArtisans,
+    required Color cardColor,
+  }) {
+    final showShimmer =
+        artisanState.isLoadingFeatured && featuredArtisans.isEmpty;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final heroHeight = screenWidth < 360
+        ? 260.0
+        : screenWidth < 390
+            ? 270.0
+            : 240.0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 24, 10, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB300).withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome_rounded,
+                        size: 14, color: Color(0xFFFF8F00)),
+                    SizedBox(width: 6),
+                    Text(
+                      'Spotlight',
+                      style: TextStyle(
+                        color: Color(0xFFFF8F00),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              if (_featuredHeroCount > 1)
+               Text(
+                  'Swipe to see more',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          const SizedBox(height: 6),
+          Text(
+            'Discover businesses and talented professionals in your area',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: heroHeight,
+            child: showShimmer
+                ? _buildHeroShimmerCard(cardColor)
+                : Listener(
+                    onPointerDown: (_) => _pauseFeaturedHero(),
+                    onPointerUp: (_) => _resumeFeaturedHero(),
+                    onPointerCancel: (_) => _resumeFeaturedHero(),
+                    child: PageView.builder(
+                      controller: _featuredHeroController,
+                      physics: const BouncingScrollPhysics(),
+                      onPageChanged: (index) {
+                        setState(() => _featuredHeroIndex = index);
+                        _resumeFeaturedHero();
+                      },
+                      itemCount: featuredArtisans.length,
+                      itemBuilder: (context, index) => Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: FeaturedHeroArtisanCard(
+                          artisan: featuredArtisans[index],
+                          isActive: _featuredHeroIndex == index,
+                          accentIndex: index,
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+          if (!showShimmer && featuredArtisans.length > 1) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: List.generate(featuredArtisans.length, (index) {
+                final isActive = index == _featuredHeroIndex;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  margin: const EdgeInsets.only(right: 8),
+                  height: 8,
+                  width: isActive ? 28 : 8,
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? colorScheme.primary
+                        : colorScheme.outlineVariant.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                );
+              }),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildModernBottomNav(
     BuildContext context,
     WidgetRef ref,
@@ -1171,7 +1307,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
               _buildCenterNavItem(
                 icon: Icons.calendar_month_rounded,
-                label: currentUser?.userType == 'artisan' ? 'Jobs' : 'Bookings',
+                label: currentUser?.isArtisan == true ? 'Jobs' : 'Bookings',
                 onTap: () => context.push('/bookings'),
                 colorScheme: colorScheme,
               ),
@@ -1339,67 +1475,103 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Widget _buildShimmerList(Color cardColor) {
-    return ListView.builder(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      itemCount: 3,
-      itemBuilder: (context, index) => Padding(
-        padding: const EdgeInsets.only(right: 12),
-        child: _buildShimmerFeaturedCard(cardColor),
-      ),
-    );
-  }
-
-  Widget _buildShimmerFeaturedCard(Color cardColor) {
+  Widget _buildHeroShimmerCard(Color cardColor) {
     return Container(
-      width: 150,
+      margin: const EdgeInsets.only(right: 10),
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(28),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            height: 100,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 11,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surfaceVariant
-                        .withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 110,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withOpacity(0.45),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  height: 10,
-                  width: 70,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surfaceVariant
-                        .withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(4),
+                  const SizedBox(height: 18),
+                  Container(
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withOpacity(0.55),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 140,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withOpacity(0.42),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List.generate(
+                      3,
+                      (_) => Container(
+                        width: 84,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withOpacity(0.35),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    width: 124,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withOpacity(0.38),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 18),
+            Container(
+              width: 118,
+              height: 168,
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withOpacity(0.5),
+                borderRadius: BorderRadius.circular(26),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1450,7 +1622,7 @@ class _ArtisanCardWrapper extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         // Layered shadows: ambient glow + directional key shadow
         boxShadow: isDark
             ? [
@@ -1493,7 +1665,7 @@ class _ArtisanCardWrapper extends StatelessWidget {
       ),
       child: Material(
         color: cardColor,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         clipBehavior: Clip.antiAlias,
         // elevation: 0 ensures no Material border/tint bleeds through
         elevation: 0,
@@ -1560,6 +1732,7 @@ class _BottomSheetTile extends StatelessWidget {
     );
   }
 }
+
 
 
 

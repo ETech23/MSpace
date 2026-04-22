@@ -1,6 +1,7 @@
 // lib/features/booking/presentation/widgets/booking_card.dart
 
 import 'package:flutter/material.dart';
+import '../../../../core/constants/role_labels.dart';
 import 'package:intl/intl.dart';
 import '../../domain/entities/booking_entity.dart';
 
@@ -78,7 +79,7 @@ class BookingCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final statusColor = _getStatusColor(booking.status);
 
-    // Determine who to show (customer sees artisan, artisan sees customer)
+    // Determine who to show (Client sees artisan, artisan sees Client)
     final displayName = isArtisan ? booking.customerName : booking.artisanName;
     final displayPhotoUrl = isArtisan ? booking.customerPhotoUrl : booking.artisanPhotoUrl;
 
@@ -166,7 +167,7 @@ class BookingCard extends StatelessWidget {
                             ),
                             if (isArtisan)
                               Text(
-                                'Customer',
+                                RoleLabels.client,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: colorScheme.onSurfaceVariant,
                                 ),
@@ -289,3 +290,4 @@ class BookingCard extends StatelessWidget {
     );
   }
 }
+

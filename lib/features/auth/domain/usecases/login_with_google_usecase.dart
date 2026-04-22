@@ -8,7 +8,7 @@ class LoginWithGoogleUseCase {
 
   LoginWithGoogleUseCase(this.repository);
 
-  Future<Either<Failure, UserModel>> call() async {
-    return await repository.loginWithGoogle();
+  Future<Either<Failure, UserModel>> call({String? preferredUserType}) async {
+    return await repository.loginWithGoogle(preferredUserType: preferredUserType);
   }
 }

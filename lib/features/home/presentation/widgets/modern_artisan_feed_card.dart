@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/artisan_entity.dart';
 
 final artisanLiveCategoryProvider =
-    FutureProvider.family<String, String>((ref, artisanId) async {
+    FutureProvider.family<String?, String>((ref, artisanId) async {
   try {
     final supabase = Supabase.instance.client;
     final response = await supabase
@@ -14,12 +14,38 @@ final artisanLiveCategoryProvider =
         .select('category')
         .eq('user_id', artisanId)
         .single();
-    return response['category'] as String? ?? 'General';
+    final category = response['category'] as String?;
+    if (category == null || category.trim().isEmpty) return null;
+    if (category.trim().toLowerCase() == 'general') return null;
+    return category;
   } catch (e) {
-    return 'General';
+    return null;
   }
 });
 
+final businessLiveCategoryProvider =
+    FutureProvider.family<String?, String>((ref, businessId) async {
+  try {
+    final supabase = Supabase.instance.client;
+    final response = await supabase
+        .from('business_profiles')
+        .select('service_categories')
+        .eq('user_id', businessId)
+        .single();
+    final categories = response['service_categories'];
+    if (categories is List) {
+      final first = categories.map((e) => e.toString()).firstWhere(
+            (e) => e.trim().isNotEmpty,
+            orElse: () => '',
+          );
+      if (first.isEmpty) return null;
+      return first;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+});
 final artisanLiveRatingProvider =
     FutureProvider.family<Map<String, dynamic>, String>((ref, artisanId) async {
   final supabase = Supabase.instance.client;
@@ -63,9 +89,12 @@ class ArtisanFeedCard extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     final shortAddress = _getShortAddress(artisan.address);
+    final isBusiness = artisan.userType == 'business';
 
     final liveRatingAsync = ref.watch(artisanLiveRatingProvider(artisan.userId));
-    final liveCategoryAsync = ref.watch(artisanLiveCategoryProvider(artisan.userId));
+    final liveCategoryAsync = isBusiness
+        ? ref.watch(businessLiveCategoryProvider(artisan.userId))
+        : ref.watch(artisanLiveCategoryProvider(artisan.userId));
 
     // Card surface — slightly lifted from page background
     final cardSurface = isDark
@@ -77,7 +106,7 @@ class ArtisanFeedCard extends ConsumerWidget {
       child: Container(
         decoration: BoxDecoration(
           color: cardSurface,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(12),
           boxShadow: isDark
               ? [
                   BoxShadow(
@@ -173,11 +202,55 @@ class ArtisanFeedCard extends ConsumerWidget {
                     ),
                     const SizedBox(height: 5),
 
-                    // Category pill
-                    liveCategoryAsync.when(
-                      data: (cat) => _CategoryPill(label: cat, colorScheme: colorScheme),
-                      loading: () => _CategoryPill(label: '...', colorScheme: colorScheme),
-                      error: (_, __) => _CategoryPill(label: artisan.category, colorScheme: colorScheme),
+                    // Category + business pill
+                    Row(
+                      children: [
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                          child: liveCategoryAsync.when(
+                            data: (cat) {
+                              final effective = isBusiness
+                                  ? cat
+                                  : (cat ??
+                                      (artisan.category.trim().toLowerCase() == 'general'
+                                          ? null
+                                          : artisan.category));
+                              if (effective == null || effective.trim().isEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              return _CategoryPill(
+                                label: effective,
+                                colorScheme: colorScheme,
+                              );
+                            },
+                            loading: () => _CategoryPill(
+                              label: '...',
+                              colorScheme: colorScheme,
+                            ),
+                            error: (_, __) {
+                              final effective = isBusiness
+                                  ? null
+                                  : (artisan.category.trim().toLowerCase() == 'general'
+                                      ? null
+                                      : artisan.category);
+                              if (effective == null || effective.trim().isEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              return _CategoryPill(
+                                label: effective,
+                                colorScheme: colorScheme,
+                              );
+                            },
+                          ),
+                        ),
+                        ),
+                        if (isBusiness) ...[
+                          const SizedBox(width: 6),
+                          _RolePill(label: 'Business', colorScheme: colorScheme),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 7),
 
@@ -289,6 +362,33 @@ class _CategoryPill extends StatelessWidget {
         label,
         style: TextStyle(
           color: colorScheme.primary,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _RolePill extends StatelessWidget {
+  const _RolePill({required this.label, required this.colorScheme});
+
+  final String label;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2E7D32).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: const Color(0xFF2E7D32),
           fontSize: 10,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.2,

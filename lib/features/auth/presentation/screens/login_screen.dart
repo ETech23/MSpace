@@ -124,7 +124,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     _showMessage('Signing in with Google...', false);
 
     try {
-      await ref.read(authProvider.notifier).loginWithGoogle();
+      final preferredRole = await _promptRoleForGoogle();
+      if (preferredRole == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
+      await ref.read(authProvider.notifier).loginWithGoogle(
+        preferredUserType: preferredRole,
+      );
 
       if (mounted) {
         final authState = ref.read(authProvider);
@@ -143,6 +151,59 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       setState(() => _isLoading = false);
       _showMessage('Error: ${e.toString()}', true);
     }
+  }
+
+  Future<String?> _promptRoleForGoogle() async {
+    final theme = Theme.of(context);
+    return showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Choose account type',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'If you already have an account, we’ll keep your existing role.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.handyman_outlined),
+                title: const Text('Artisan'),
+                subtitle: const Text('Offer services'),
+                onTap: () => Navigator.pop(ctx, 'artisan'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.store_mall_directory_outlined),
+                title: const Text('Business'),
+                subtitle: const Text('A team or company'),
+                onTap: () => Navigator.pop(ctx, 'business'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: const Text('Client'),
+                subtitle: const Text('Looking for services'),
+                onTap: () => Navigator.pop(ctx, 'customer'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _handleForgotPassword() async {
@@ -215,7 +276,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 8),
 
                 Text(
-                  'Login to continue',
+                  'Login to manage your client, artisan, or business account',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurface.withOpacity(0.6),
                   ),
@@ -357,3 +418,4 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 }
+

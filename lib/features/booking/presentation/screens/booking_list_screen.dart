@@ -1,6 +1,7 @@
 // lib/features/booking/presentation/screens/booking_list_screen.dart
 
 import 'package:flutter/material.dart';
+import '../../../../core/constants/role_labels.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -139,13 +140,18 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
     final colorScheme = theme.colorScheme;
     final bookingState = ref.watch(bookingProvider);
     final user = ref.watch(authProvider).user;
-    final isArtisan = user?.userType == 'artisan';
+    final isArtisan = user?.isArtisan ?? false;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(isArtisan ? 'My Jobs' : 'My Bookings'),
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.receipt_long_rounded),
+            tooltip: 'Invoices',
+            onPressed: () => context.push('/profile/invoices'),
+          ),
           IconButton(
             icon: const Icon(Icons.filter_list),
             onPressed: _showFilterDialog,
@@ -258,7 +264,7 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
     ColorScheme colorScheme,
   ) {
     final user = ref.read(authProvider).user;
-    final isArtisan = user?.userType == 'artisan';
+    final isArtisan = user?.isArtisan ?? false;
 
     String title;
     String message;
@@ -290,7 +296,7 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
       default:
         title = isArtisan ? 'No Jobs Yet' : 'No Bookings Yet';
         message = isArtisan
-            ? 'When customers book your services, they will appear here'
+            ? 'When ${RoleLabels.client}s book your services, they will appear here'
             : 'Start booking artisans to see your bookings here';
         icon = Icons.calendar_today;
     }
@@ -332,4 +338,5 @@ class _BookingListScreenState extends ConsumerState<BookingListScreen>
     );
   }
 }
+
 

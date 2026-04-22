@@ -2,6 +2,7 @@
 
 import 'package:artisan_marketplace/features/auth/presentation/providers/auth_provider.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/constants/role_labels.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/user_profile_entity.dart';
 import '../providers/user_profile_provider.dart';
@@ -13,10 +14,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../trust/presentation/providers/verification_status_provider.dart';
 import '../../../trust/presentation/providers/trust_provider.dart';
 import '../../../../core/ads/ad_widgets.dart';
+import '../providers/business_profile_provider.dart';
 
 class UserProfileScreen extends ConsumerStatefulWidget {
   final String userId;
-  final String userType; // 'artisan' or 'client'
+  final String userType; // 'artisan', 'business' or 'client'
   final String? userName;
 
   const UserProfileScreen({
@@ -196,6 +198,9 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
             );
     
     final userProfile = profileState.userProfile;
+    final businessProfileState = widget.userType == 'business'
+        ? ref.watch(businessProfileProvider(widget.userId))
+        : null;
     final stats = profileState.stats;
 
     if (isBlocked) {
@@ -261,6 +266,7 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
         colorScheme: colorScheme,
         profileState: profileState,
         userProfile: userProfile,
+        businessProfileState: businessProfileState,
         stats: stats,
       ),
     );
@@ -271,6 +277,7 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
     required ColorScheme colorScheme,
     required UserProfileState profileState,
     required UserProfileEntity? userProfile,
+    required BusinessProfileState? businessProfileState,
     required Map<String, dynamic>? stats,
   }) {
     if (profileState.isLoading) {
@@ -352,9 +359,16 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
           ],
           
           // User Details based on type
-          if (widget.userType == 'artisan') 
+          if (widget.userType == 'business')
+            _buildBusinessDetails(
+              userProfile,
+              businessProfileState,
+              theme,
+              colorScheme,
+            )
+          else if (widget.userType == 'artisan')
             _buildArtisanDetails(userProfile, theme, colorScheme)
-          else 
+          else
             _buildClientDetails(userProfile, theme, colorScheme),
           
           const SizedBox(height: 32),
@@ -496,15 +510,19 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                       decoration: BoxDecoration(
-                        color: widget.userType == 'artisan'
+                        color: widget.userType == 'artisan' || widget.userType == 'business'
                             ? Colors.blue.withOpacity(0.2)
                             : Colors.green.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        widget.userType == 'artisan' ? 'Service Provider' : 'Customer',
+                        widget.userType == 'business'
+                            ? RoleLabels.business
+                            : (widget.userType == 'artisan'
+                                ? 'Service Provider'
+                                : RoleLabels.client),
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: widget.userType == 'artisan'
+                          color: widget.userType == 'artisan' || widget.userType == 'business'
                               ? Colors.blue.shade700
                               : Colors.green.shade700,
                           fontWeight: FontWeight.w600,
@@ -989,6 +1007,209 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
     );
   }
 
+  Widget _buildBusinessDetails(
+    UserProfileEntity userProfile,
+    BusinessProfileState? businessState,
+    ThemeData theme,
+    ColorScheme colorScheme,
+  ) {
+    final profile = businessState?.profile ?? const <String, dynamic>{};
+    final items = businessState?.items ?? const <Map<String, dynamic>>[];
+
+    if (businessState?.isLoading == true) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+        ),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final description = profile['description']?.toString();
+    final contactPhone = profile['contact_phone']?.toString();
+    final showPhone = (profile['show_phone'] as bool?) ?? false;
+    final coverageArea = profile['coverage_area']?.toString();
+    final teamSize = profile['team_size']?.toString();
+    final categories = profile['service_categories'];
+    final categoryList = categories is List
+        ? categories.map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
+        : const <String>[];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.storefront, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Business Details',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (description != null && description.isNotEmpty) ...[
+            _buildDetailRow(
+              Icons.info_outline,
+              'Description',
+              description,
+              theme,
+              colorScheme,
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (showPhone && contactPhone != null && contactPhone.isNotEmpty) ...[
+            _buildDetailRow(
+              Icons.phone,
+              'Contact Phone',
+              contactPhone,
+              theme,
+              colorScheme,
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (coverageArea != null && coverageArea.isNotEmpty) ...[
+            _buildDetailRow(
+              Icons.map_outlined,
+              'Coverage Area',
+              coverageArea,
+              theme,
+              colorScheme,
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (teamSize != null && teamSize.isNotEmpty) ...[
+            _buildDetailRow(
+              Icons.groups_outlined,
+              'Team Size',
+              teamSize,
+              theme,
+              colorScheme,
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (categoryList.isNotEmpty) ...[
+            Text(
+              'Service Categories',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: categoryList
+                  .map((cat) => Chip(
+                        label: Text(cat),
+                        backgroundColor: colorScheme.primaryContainer,
+                        labelStyle:
+                            TextStyle(color: colorScheme.onPrimaryContainer),
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (items.isNotEmpty) ...[
+            Text(
+              'Items & Services',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...items.map((item) {
+              final name = item['name']?.toString() ?? 'Item';
+              final desc = item['description']?.toString();
+              final price = item['price']?.toString();
+              final isActive = item['is_active'] as bool? ?? true;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                  border:
+                      Border.all(color: colorScheme.outline.withOpacity(0.1)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        if (!isActive)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: colorScheme.onSurfaceVariant
+                                  .withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Inactive',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (desc != null && desc.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        desc,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                    if (price != null && price.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Price: $price',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }),
+          ],
+          if (items.isEmpty && (description == null || description.isEmpty)) ...[
+            Text(
+              'Business details have not been completed yet.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildClientDetails(
     UserProfileEntity userProfile,
     ThemeData theme,
@@ -1009,7 +1230,7 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
               Icon(Icons.person_pin, color: colorScheme.primary),
               const SizedBox(width: 8),
               Text(
-                'Customer Information',
+                '${RoleLabels.client} Information',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -1071,6 +1292,7 @@ final userLiveRatingProvider = FutureProvider.family<Map<String, dynamic>, Strin
     );
   }
 }
+
 
 
 

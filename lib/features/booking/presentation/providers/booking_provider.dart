@@ -3,6 +3,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/di/injection_container.dart';
 import '../../../../core/services/notification_service.dart'; // ✅ Add this
+import '../../../../core/services/analytics_service.dart';
 import '../../domain/entities/booking_entity.dart';
 import '../../domain/usecases/create_booking_usecase.dart';
 import '../../domain/usecases/get_user_bookings_usecase.dart';
@@ -170,6 +171,13 @@ class BookingNotifier extends StateNotifier<BookingState> {
           selectedBooking: booking,
           successMessage: 'Booking created successfully!',
         );
+        AnalyticsService.instance.logEvent(
+          'booking_create',
+          params: {
+            'booking_id': booking.id,
+            'service_type': booking.serviceType,
+          },
+        );
         return true;
       },
     );
@@ -276,6 +284,10 @@ class BookingNotifier extends StateNotifier<BookingState> {
               currentBooking: updatedBooking,
               successMessage: 'Booking accepted!',
             );
+            AnalyticsService.instance.logEvent(
+              'booking_accept',
+              params: {'booking_id': updatedBooking.id},
+            );
             return true;
           },
         );
@@ -315,7 +327,7 @@ class BookingNotifier extends StateNotifier<BookingState> {
             return false;
           },
           (updatedBooking) async {
-            // ✅ Send notification to customer
+            // ✅ Send notification to Client
             await notificationService.sendBookingRejectedNotification(
               artisanName: updatedBooking.artisanName ?? 'Artisan',
               serviceType: updatedBooking.serviceType,
@@ -327,6 +339,10 @@ class BookingNotifier extends StateNotifier<BookingState> {
               selectedBooking: updatedBooking,
               currentBooking: updatedBooking,
               successMessage: 'Booking rejected',
+            );
+            AnalyticsService.instance.logEvent(
+              'booking_reject',
+              params: {'booking_id': updatedBooking.id},
             );
             return true;
           },
@@ -361,7 +377,7 @@ class BookingNotifier extends StateNotifier<BookingState> {
             return false;
           },
           (updatedBooking) async {
-            // ✅ Send notification to customer
+            // ✅ Send notification to Client
             await notificationService.sendBookingStartedNotification(
               artisanName: updatedBooking.artisanName ?? 'Artisan',
               serviceType: updatedBooking.serviceType, bookingId: '',
@@ -372,6 +388,10 @@ class BookingNotifier extends StateNotifier<BookingState> {
               selectedBooking: updatedBooking,
               currentBooking: updatedBooking,
               successMessage: 'Work started!',
+            );
+            AnalyticsService.instance.logEvent(
+              'booking_start',
+              params: {'booking_id': updatedBooking.id},
             );
             return true;
           },
@@ -406,7 +426,7 @@ class BookingNotifier extends StateNotifier<BookingState> {
             return false;
           },
           (updatedBooking) async {
-            // ✅ Send notification to customer
+            // ✅ Send notification to Client
             await notificationService.sendBookingCompletedNotification(
               artisanName: updatedBooking.artisanName ?? 'Artisan',
               serviceType: updatedBooking.serviceType, bookingId: '',
@@ -417,6 +437,10 @@ class BookingNotifier extends StateNotifier<BookingState> {
               selectedBooking: updatedBooking,
               currentBooking: updatedBooking,
               successMessage: 'Work completed!',
+            );
+            AnalyticsService.instance.logEvent(
+              'booking_complete',
+              params: {'booking_id': updatedBooking.id},
             );
             return true;
           },
@@ -472,6 +496,10 @@ class BookingNotifier extends StateNotifier<BookingState> {
               currentBooking: updatedBooking,
               successMessage: 'Booking cancelled',
             );
+            AnalyticsService.instance.logEvent(
+              'booking_cancel',
+              params: {'booking_id': updatedBooking.id},
+            );
             return true;
           },
         );
@@ -525,3 +553,4 @@ final bookingProvider = StateNotifierProvider<BookingNotifier, BookingState>((re
     notificationService: ref.watch(notificationServiceProvider), // ✅ Add this
   );
 });
+

@@ -296,7 +296,8 @@ Future<UserProfileEntity> getUserProfile({
     try {
       print('📊 Getting booking stats for: $userId ($userType)');
       
-      final columnName = userType == 'artisan' ? 'artisan_id' : 'client_id';
+    final columnName =
+        (userType == 'artisan' || userType == 'business') ? 'artisan_id' : 'client_id';
       
       final bookings = await supabaseClient
           .from('bookings')
@@ -334,3 +335,4 @@ Future<UserProfileEntity> getUserProfile({
     };
   }
 }
+

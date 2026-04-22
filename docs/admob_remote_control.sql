@@ -38,9 +38,9 @@ insert into public.app_runtime_config (
 values (
   'ads',
   true,
-  'ca-app-pub-xxxxxxxxxxxxxxxx/banner_android',
+  'ca-app-pub-1208599750391446/6753689805',
   'ca-app-pub-xxxxxxxxxxxxxxxx/banner_ios',
-  'ca-app-pub-xxxxxxxxxxxxxxxx/native_android',
+  'ca-app-pub-1208599750391446/1501363125',
   'ca-app-pub-xxxxxxxxxxxxxxxx/native_ios'
 )
 on conflict (config_key) do update

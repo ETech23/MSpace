@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'ad_runtime_config.dart';
@@ -20,6 +21,7 @@ class AdRemoteConfigService {
   RealtimeChannel? _realtimeChannel;
   bool _initialized = false;
   bool _isRefreshing = false;
+  bool? _isDevPackage;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -45,6 +47,15 @@ class AdRemoteConfigService {
     if (_isRefreshing) return;
     _isRefreshing = true;
     try {
+      final isDev = await _isDevApp();
+      if (isDev) {
+        // Force test ads on dev package, regardless of remote config.
+        _config.value = AdRuntimeConfig(
+          enabled: true,
+          fetchedAt: DateTime.now(),
+        );
+        return;
+      }
       final config = await _loadConfigFromSupabase();
       if (config != null) {
         _config.value = config;
@@ -136,5 +147,17 @@ class AdRemoteConfigService {
       nativeIos: value['native_ios'] as String?,
       fetchedAt: DateTime.now(),
     );
+  }
+
+  Future<bool> _isDevApp() async {
+    if (_isDevPackage != null) return _isDevPackage!;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final name = info.packageName.toLowerCase();
+      _isDevPackage = name.endsWith('.dev');
+    } catch (_) {
+      _isDevPackage = false;
+    }
+    return _isDevPackage!;
   }
 }

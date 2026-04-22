@@ -48,6 +48,8 @@ class AuthRepositoryImpl implements AuthRepository {
     required String name,
     required String phone,
     required String userType,
+    String? referralCode,
+    String? referralSource,
     double? latitude,  
     double? longitude, 
     String? address,   
@@ -60,6 +62,8 @@ class AuthRepositoryImpl implements AuthRepository {
           name: name,
           phone: phone,
           userType: userType,
+          referralCode: referralCode,
+          referralSource: referralSource,
         );
         await localDataSource.cacheUser(user);
         return Right(user);
@@ -74,10 +78,14 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<Either<Failure, UserModel>> loginWithGoogle() async {
+  Future<Either<Failure, UserModel>> loginWithGoogle({
+    String? preferredUserType,
+  }) async {
     if (await networkInfo.isConnected) {
       try {
-        final user = await remoteDataSource.loginWithGoogle();
+        final user = await remoteDataSource.loginWithGoogle(
+          preferredUserType: preferredUserType,
+        );
         await localDataSource.cacheUser(user);
         return Right(user);
       } on ServerException catch (e) {
@@ -164,6 +172,18 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<void> createArtisanProfileIfNeeded(String userId) async {
     try {
       return await remoteDataSource.createArtisanProfileIfNeeded(userId);
+    } on ServerException catch (e) {
+      throw ServerFailure(message: e.message);
+    }
+  }
+
+  @override
+  Future<void> createBusinessProfileIfNeeded(String userId, {String? businessName}) async {
+    try {
+      return await remoteDataSource.createBusinessProfileIfNeeded(
+        userId,
+        businessName: businessName,
+      );
     } on ServerException catch (e) {
       throw ServerFailure(message: e.message);
     }

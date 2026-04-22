@@ -9,6 +9,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../profile/domain/entities/profile_update_entity.dart';
 import '../../../profile/presentation/providers/profile_provider.dart';
 import '../../../profile/presentation/providers/artisan_profile_provider.dart';
+import '../../../profile/presentation/providers/business_profile_provider.dart';
 import '../../../trust/presentation/providers/verification_status_provider.dart';
 import 'dart:io';
 
@@ -41,6 +42,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
   // Certifications management
   final List<String> _certifications = [];
   final TextEditingController _certificationInputController = TextEditingController();
+
+  // Business-specific controllers
+  late TextEditingController _businessNameController;
+  late TextEditingController _coverageAreaController;
+  late TextEditingController _teamSizeController;
+  late TextEditingController _businessDescriptionController;
+  late TextEditingController _businessContactPhoneController;
+  bool _showBusinessPhone = false;
+  final List<String> _serviceCategories = [];
+  final TextEditingController _serviceCategoryInputController = TextEditingController();
 
   String? _selectedImagePath;
   final ImagePicker _picker = ImagePicker();
@@ -86,9 +97,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     _categoryController = TextEditingController();
     _experienceController = TextEditingController();
     _hourlyRateController = TextEditingController();
+
+    // Initialize business controllers
+    _businessNameController = TextEditingController(text: user?.name ?? '');
+    _businessContactPhoneController = TextEditingController(text: user?.phone ?? '');
+    _coverageAreaController = TextEditingController();
+    _teamSizeController = TextEditingController();
+    _businessDescriptionController = TextEditingController();
     
     // If artisan, load artisan profile data
-    if (user?.isArtisan ?? false) {
+    if (user?.userType == 'artisan') {
       // Load artisan profile to get additional fields
       Future.microtask(() {
         final artisanProfileState = ref.read(artisanProfileProvider(user!.id));
@@ -107,6 +125,34 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
         }
       });
     }
+
+    if (user?.userType == 'business') {
+      Future.microtask(() {
+        final businessState = ref.read(businessProfileProvider(user!.id));
+        final profile = businessState.profile;
+        if (profile != null && mounted) {
+          setState(() {
+            _businessNameController.text =
+                (profile['business_name'] as String?) ?? _businessNameController.text;
+            _coverageAreaController.text =
+                (profile['coverage_area'] as String?) ?? '';
+            _teamSizeController.text =
+                profile['team_size'] != null ? '${profile['team_size']}' : '';
+            _businessDescriptionController.text =
+                (profile['description'] as String?) ?? '';
+            _businessContactPhoneController.text =
+                (profile['contact_phone'] as String?) ?? _businessContactPhoneController.text;
+            _showBusinessPhone = (profile['show_phone'] as bool?) ?? false;
+
+            final categories = profile['service_categories'];
+            if (categories is List) {
+              _serviceCategories.addAll(
+                  categories.map((e) => e.toString()).where((e) => e.isNotEmpty));
+            }
+          });
+        }
+      });
+    }
   }
 
   @override
@@ -121,6 +167,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     _hourlyRateController.dispose();
     _skillInputController.dispose();
     _certificationInputController.dispose();
+    _businessNameController.dispose();
+    _coverageAreaController.dispose();
+    _teamSizeController.dispose();
+    _businessDescriptionController.dispose();
+    _businessContactPhoneController.dispose();
+    _serviceCategoryInputController.dispose();
     super.dispose();
   }
 
@@ -264,6 +316,80 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     });
   }
 
+  void _addServiceCategory() {
+    final category = _serviceCategoryInputController.text.trim();
+    if (category.isNotEmpty && !_serviceCategories.contains(category)) {
+      setState(() {
+        _serviceCategories.add(category);
+        _serviceCategoryInputController.clear();
+      });
+    }
+  }
+
+  void _removeServiceCategory(String category) {
+    setState(() {
+      _serviceCategories.remove(category);
+    });
+  }
+
+  Future<void> _showAddBusinessItemDialog(
+    BusinessProfileNotifier notifier,
+  ) async {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final priceController = TextEditingController();
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Item'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Item name'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: descriptionController,
+              decoration: const InputDecoration(labelText: 'Description (optional)'),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: priceController,
+              decoration: const InputDecoration(labelText: 'Price (optional)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              await notifier.addBusinessItem(
+                name: name,
+                description: descriptionController.text.trim().isEmpty
+                    ? null
+                    : descriptionController.text.trim(),
+                price: priceController.text.trim().isEmpty
+                    ? null
+                    : priceController.text.trim(),
+              );
+              if (mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -279,18 +405,23 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     }
 
     // Prepare basic profile updates
+    final resolvedName = user.userType == 'business'
+        ? _businessNameController.text.trim()
+        : _nameController.text.trim();
+    final resolvedPhone = user.userType == 'business'
+        ? _businessContactPhoneController.text.trim()
+        : _phoneController.text.trim();
+
     final updates = ProfileUpdateEntity(
-      name: _nameController.text.trim(),
-      phone: _phoneController.text.trim().isEmpty 
-          ? null 
-          : _phoneController.text.trim(),
+      name: resolvedName,
+      phone: resolvedPhone.isEmpty ? null : resolvedPhone,
       address: _addressController.text.trim().isEmpty
           ? null
           : _addressController.text.trim(),
       photoUrl: photoUrl,
       latitude: _latitude,
       longitude: _longitude,
-      bio: user.isArtisan ? _bioController.text.trim() : null,
+      bio: user.userType == 'artisan' ? _bioController.text.trim() : null,
     );
 
     // Update basic profile
@@ -312,7 +443,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     }
 
     // If artisan, update artisan-specific fields
-    if (user.isArtisan) {
+    if (user.userType == 'artisan') {
       final artisanUpdates = {
         'bio': _bioController.text.trim().isEmpty ? null : _bioController.text.trim(),
         'category': _categoryController.text.trim().isEmpty ? null : _categoryController.text.trim(),
@@ -340,6 +471,46 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
       }
     }
 
+    if (user.userType == 'business') {
+      final businessUpdates = <String, dynamic>{
+        'business_name': _businessNameController.text.trim().isEmpty
+            ? null
+            : _businessNameController.text.trim(),
+        'service_categories': _serviceCategories.isEmpty ? null : _serviceCategories,
+        'team_size': _teamSizeController.text.trim().isEmpty
+            ? null
+            : int.tryParse(_teamSizeController.text.trim()),
+        'coverage_area': _coverageAreaController.text.trim().isEmpty
+            ? null
+            : _coverageAreaController.text.trim(),
+        'description': _businessDescriptionController.text.trim().isEmpty
+            ? null
+            : _businessDescriptionController.text.trim(),
+        'contact_phone': _businessContactPhoneController.text.trim().isEmpty
+            ? null
+            : _businessContactPhoneController.text.trim(),
+        'show_phone': _showBusinessPhone,
+      };
+
+      if (photoUrl != null) {
+        businessUpdates['logo_url'] = photoUrl;
+      }
+
+      final businessSuccess = await ref
+          .read(businessProfileProvider(user.id).notifier)
+          .updateBusinessProfile(businessUpdates);
+
+      if (!businessSuccess && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile updated but business details failed to save'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+    }
+
     if (mounted) {
       // Refresh auth state
       await ref.read(authProvider.notifier).refreshUser();
@@ -360,7 +531,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     final colorScheme = theme.colorScheme;
     final user = ref.watch(authProvider).user;
     final profileState = ref.watch(profileProvider);
-    final isArtisan = user?.isArtisan ?? false;
+    final isArtisan = user?.userType == 'artisan';
+    final isBusiness = user?.userType == 'business';
 
     final verificationDetailsAsync = user == null
         ? const AsyncValue<Map<String, dynamic>?>.data(null)
@@ -381,6 +553,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
     // Watch artisan profile state if user is artisan
     final artisanProfileState = isArtisan 
         ? ref.watch(artisanProfileProvider(user!.id))
+        : null;
+    final businessProfileState = isBusiness
+        ? ref.watch(businessProfileProvider(user!.id))
         : null;
 
     return Scaffold(
@@ -407,7 +582,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
           const SizedBox(width: 8),
         ],
       ),
-      body: artisanProfileState?.isLoading ?? false
+      body: (artisanProfileState?.isLoading ?? false) ||
+              (businessProfileState?.isLoading ?? false)
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -499,6 +675,181 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
                 ),
               ],
 
+              // Business-specific fields
+              if (isBusiness) ...[
+                const SizedBox(height: 32),
+                _buildSectionHeader('Business Profile', colorScheme, theme),
+                const SizedBox(height: 16),
+
+                _buildTextField(
+                  controller: _businessDescriptionController,
+                  label: 'Business Description',
+                  icon: Icons.business_center_outlined,
+                  maxLines: 4,
+                  maxLength: 600,
+                  hint: 'Describe your business, services, and what you sell...',
+                ),
+                const SizedBox(height: 16),
+
+                _buildTextField(
+                  controller: _coverageAreaController,
+                  label: 'Coverage Area',
+                  icon: Icons.map_outlined,
+                  hint: 'e.g., Port Harcourt, Abuja, Lagos',
+                ),
+                const SizedBox(height: 16),
+
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Show Business Phone'),
+                  subtitle: const Text('Allow clients to see your business phone number'),
+                  value: _showBusinessPhone,
+                  onChanged: (value) {
+                    setState(() {
+                      _showBusinessPhone = value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                _buildTextField(
+                  controller: _teamSizeController,
+                  label: 'Team Size',
+                  icon: Icons.groups_outlined,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                ),
+                const SizedBox(height: 24),
+
+                _buildListSection(
+                  title: 'Service Categories',
+                  items: _serviceCategories,
+                  controller: _serviceCategoryInputController,
+                  onAdd: _addServiceCategory,
+                  onRemove: _removeServiceCategory,
+                  hint: 'Add a category',
+                  icon: Icons.category_outlined,
+                  colorScheme: colorScheme,
+                  theme: theme,
+                ),
+                const SizedBox(height: 24),
+
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: colorScheme.outline.withOpacity(0.2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.inventory_2_outlined, color: colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Items You Sell',
+                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: businessProfileState == null
+                                ? null
+                                : () => _showAddBusinessItemDialog(
+                                      ref.read(businessProfileProvider(user!.id).notifier),
+                                    ),
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if ((businessProfileState?.items ?? []).isEmpty)
+                        Text(
+                          'No items added yet.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        )
+                      else
+                        ...businessProfileState!.items.map((item) {
+                          final itemId = item['id'] as int?;
+                          final name = item['name']?.toString() ?? 'Item';
+                          final desc = item['description']?.toString();
+                          final price = item['price']?.toString();
+                          final isActive = item['is_active'] as bool? ?? true;
+                          return Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: colorScheme.outline.withOpacity(0.2)),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: theme.textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      if (desc != null && desc.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 4),
+                                          child: Text(
+                                            desc,
+                                            style: theme.textTheme.bodySmall,
+                                          ),
+                                        ),
+                                      if (price != null && price.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 4),
+                                          child: Text(
+                                            'Price: $price',
+                                            style: theme.textTheme.bodySmall?.copyWith(
+                                              color: colorScheme.primary,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  children: [
+                                    Switch(
+                                      value: isActive,
+                                      onChanged: itemId == null
+                                          ? null
+                                          : (next) => ref
+                                              .read(businessProfileProvider(user!.id).notifier)
+                                              .toggleItemActive(itemId, next),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline),
+                                      onPressed: itemId == null
+                                          ? null
+                                          : () => ref
+                                              .read(businessProfileProvider(user!.id).notifier)
+                                              .deleteBusinessItem(itemId),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                    ],
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 32),
 
               // Personal Information Section
@@ -507,14 +858,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
 
               // Name Field
               _buildTextField(
-                controller: _nameController,
-                label: 'Full Name *',
+                controller: isBusiness ? _businessNameController : _nameController,
+                label: isBusiness ? 'Business Name *' : 'Full Name *',
                 icon: Icons.person_outline,
                 enabled: !lockSensitiveFields,
                 readOnly: lockSensitiveFields,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return 'Please enter your name';
+                    return isBusiness
+                        ? 'Please enter your business name'
+                        : 'Please enter your name';
                   }
                   return null;
                 },
@@ -535,8 +888,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen>
 
               // Phone Field
               _buildTextField(
-                controller: _phoneController,
-                label: 'Phone Number',
+                controller: isBusiness ? _businessContactPhoneController : _phoneController,
+                label: isBusiness ? 'Business Contact Phone' : 'Phone Number',
                 icon: Icons.phone_outlined,
                 keyboardType: TextInputType.phone,
               ),

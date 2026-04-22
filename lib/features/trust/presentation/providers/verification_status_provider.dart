@@ -1,10 +1,10 @@
 // lib/features/trust/presentation/providers/verification_status_provider.dart
-// UNIVERSAL VERSION - Works for both artisans and customers
+// UNIVERSAL VERSION - Works for both artisans and Clients
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// ✅ UNIVERSAL Provider - checks users.verified for ALL users (artisans AND customers)
+/// ✅ UNIVERSAL Provider - checks users.verified for ALL users (artisans AND Clients)
 /// This is the MAIN provider you should use everywhere
 final userVerificationStatusProvider = StreamProvider.family<bool, String>((ref, userId) {
   final supabase = Supabase.instance.client;

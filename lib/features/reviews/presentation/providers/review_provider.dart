@@ -51,7 +51,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
   Future<bool> createReview({
     required String bookingId,
     required String artisanId,
-    required String clientId,
+    required String customerId,
     required double rating,
     String? comment,
   }) async {
@@ -60,7 +60,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     final result = await repository.createReview(
       bookingId: bookingId,
       artisanId: artisanId,
-      clientId: clientId,
+      customerId: customerId,
       rating: rating,
       comment: comment,
     );
@@ -263,7 +263,7 @@ class CreateReviewNotifier extends StateNotifier<AsyncValue<void>> {
   Future<bool> submit({
     required String bookingId,
     required String artisanId,
-    required String clientId,
+    required String customerId,
     required double rating,
     String? comment,
   }) async {
@@ -274,7 +274,7 @@ class CreateReviewNotifier extends StateNotifier<AsyncValue<void>> {
         .createReview(
           bookingId: bookingId,
           artisanId: artisanId,
-          clientId: clientId,
+          customerId: customerId,
           rating: rating,
           comment: comment,
         );

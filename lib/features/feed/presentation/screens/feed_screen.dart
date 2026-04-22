@@ -14,7 +14,12 @@ enum FeedTab { nearby, jobs, artisans, tips }
 enum FeedItemType { jobRequest, featuredArtisan, completedJob, announcement, tip }
 
 class FeedScreen extends ConsumerStatefulWidget {
-  const FeedScreen({super.key});
+  const FeedScreen({
+    super.key,
+    this.initialTab = FeedTab.nearby,
+  });
+
+  final FeedTab initialTab;
 
   @override
   ConsumerState<FeedScreen> createState() => _FeedScreenState();
@@ -35,15 +40,22 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this)
+    _activeTab = widget.initialTab.index;
+    _tabController = TabController(
+      length: 4,
+      vsync: this,
+      initialIndex: _activeTab,
+    )
       ..addListener(() {
         if (!_tabController.indexIsChanging) return;
         setState(() => _activeTab = _tabController.index);
         HapticFeedback.selectionClick();
+        _markTipsSeenIfNeeded();
       });
 
     // Rebuild feed with freshest location when user actually opens this screen.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markTipsSeenIfNeeded();
       ref.invalidate(feedStreamProvider);
     });
   }
@@ -59,12 +71,40 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     await Future<void>.delayed(const Duration(milliseconds: 300));
   }
 
+  void _markTipsSeenIfNeeded() {
+    if (_tabController.index != FeedTab.tips.index) {
+      return;
+    }
+
+    final user = ref.read(authProvider).user;
+    if (user == null) {
+      return;
+    }
+
+    ref.read(feedTipActionsProvider).markTipsSeen(userId: user.id);
+    ref.invalidate(
+      feedTipUnreadCountProvider(
+        FeedTipQuery(
+          userId: user.id,
+          userType: user.userType,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final feedAsync = ref.watch(feedStreamProvider);
     final user = ref.watch(authProvider).user;
+    final tipUnreadAsync = user == null
+        ? const AsyncValue<int>.data(0)
+        : ref.watch(
+            feedTipUnreadCountProvider(
+              FeedTipQuery(userId: user.id, userType: user.userType),
+            ),
+          );
     final blockedIds = user == null
         ? <String>{}
         : ref.watch(blockedUsersProvider(user.id)).maybeWhen(
@@ -122,7 +162,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                   builder: (context, constraints) {
                     return SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: ConstrainedBox(
                         constraints: BoxConstraints(minWidth: constraints.maxWidth),
                         child: Row(
@@ -136,9 +176,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                                 selected: _activeTab == i,
                                 colorScheme: colorScheme,
                                 isDark: isDark,
+                                badgeCount: (i == FeedTab.tips.index)
+                                    ? tipUnreadAsync.maybeWhen(
+                                        data: (count) => count,
+                                        orElse: () => 0,
+                                      )
+                                    : 0,
                                 onTap: () {
                                   _tabController.animateTo(i);
                                   setState(() => _activeTab = i);
+                                  _markTipsSeenIfNeeded();
                                 },
                               ),
                             ],
@@ -195,7 +242,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
       final target = item.targetUserType!.toLowerCase();
       if (target == 'all' || target == 'both') return true;
       if (userType == null) return false;
-      return target == userType.toLowerCase();
+      final normalized = userType.toLowerCase();
+      if (target == 'artisan') {
+        return normalized == 'artisan' || normalized == 'business';
+      }
+      return target == normalized;
     }).toList(growable: false);
   }
 }
@@ -246,6 +297,7 @@ class _FeedTabChip extends StatelessWidget {
     required this.colorScheme,
     required this.isDark,
     required this.onTap,
+    this.badgeCount = 0,
   });
   final String label;
   final IconData icon;
@@ -253,6 +305,7 @@ class _FeedTabChip extends StatelessWidget {
   final ColorScheme colorScheme;
   final bool isDark;
   final VoidCallback onTap;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -295,6 +348,24 @@ class _FeedTabChip extends StatelessWidget {
                 letterSpacing: selected ? 0.1 : 0,
               ),
             ),
+            if (badgeCount > 0) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: selected ? colorScheme.surface : colorScheme.onSurface,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'New',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? colorScheme.onSurface : colorScheme.surface,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -397,7 +468,7 @@ class _FeedCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: cardBg,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: isDark
             ? [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 14, offset: const Offset(0, 4))]
             : [
@@ -407,7 +478,7 @@ class _FeedCard extends StatelessWidget {
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => _handleCta(context, item, type),
@@ -754,7 +825,7 @@ class _FeedShimmer extends StatelessWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (_, i) => Container(
         height: i.isEven ? 120 : 80,
-        decoration: BoxDecoration(color: shimmer, borderRadius: BorderRadius.circular(18)),
+        decoration: BoxDecoration(color: shimmer, borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

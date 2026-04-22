@@ -7,7 +7,7 @@ import '../models/booking_model.dart';
 
 abstract class BookingRemoteDataSource {
   Future<BookingModel> createBooking({
-    required String clientId,
+    required String customerId,
     required String artisanId,
     required String artisanProfileId,
     required String serviceType,
@@ -67,7 +67,7 @@ class BookingRemoteDataSourceImpl implements BookingRemoteDataSource {
   
 @override
 Future<BookingModel> createBooking({
-  required String clientId,
+  required String customerId,
   required String artisanId,
   required String artisanProfileId,
   required String serviceType,
@@ -84,7 +84,7 @@ Future<BookingModel> createBooking({
     final userRows = await client
         .from('users')
         .select('id,moderation_status')
-        .inFilter('id', [clientId, artisanId]);
+        .inFilter('id', [customerId, artisanId]);
     final statusByUser = <String, String>{};
     for (final row in (userRows as List)) {
       final map = row as Map<String, dynamic>;
@@ -92,7 +92,7 @@ Future<BookingModel> createBooking({
           (map['moderation_status'] as String?) ?? 'active';
     }
 
-    final clientStatus = statusByUser[clientId] ?? 'active';
+    final clientStatus = statusByUser[customerId] ?? 'active';
     if (clientStatus != 'active') {
       throw const ServerException(
         message: 'Your account is restricted from booking at this time.',
@@ -122,7 +122,8 @@ Future<BookingModel> createBooking({
       );
     }
     final bookingData = {
-      'client_id': clientId,
+      // DB column names are fixed; do not rename (client_id in DB).
+      'client_id': customerId,
       'artisan_id': artisanId,
       'artisan_profile_id': artisanProfileId,
       'service_type': serviceType,
@@ -163,6 +164,7 @@ Future<BookingModel> createBooking({
     int offset = 0,
   }) async {
     try {
+      // DB column names are fixed; do not rename (client_id in DB).
       print('📋 Fetching bookings for $userType: $userId');
 
       var query = client.from('bookings').select('*');
@@ -231,8 +233,8 @@ Future<BookingModel> createBooking({
     try {
       if (bookings.isEmpty) return bookings;
 
-      final clientIds = bookings
-          .map((b) => b['client_id'] as String?)
+      final customerIds = bookings
+          .map((b) => (b['client_id'] ?? b['customer_id']) as String?)
           .whereType<String>()
           .toSet()
           .toList(growable: false);
@@ -247,7 +249,7 @@ Future<BookingModel> createBooking({
           .toSet()
           .toList(growable: false);
 
-      final userIds = <String>{...clientIds, ...artisanIds}.toList(growable: false);
+      final userIds = <String>{...customerIds, ...artisanIds}.toList(growable: false);
 
       Map<String, Map<String, dynamic>> usersById = {};
       Map<String, Map<String, dynamic>> profilesById = {};
@@ -277,11 +279,11 @@ Future<BookingModel> createBooking({
       }
 
       for (final booking in bookings) {
-        final clientId = booking['client_id'] as String?;
+      final customerId = (booking['client_id'] ?? booking['customer_id']) as String?;
         final artisanId = booking['artisan_id'] as String?;
         final artisanProfileId = booking['artisan_profile_id'] as String?;
 
-        final clientData = clientId == null ? null : usersById[clientId];
+        final clientData = customerId == null ? null : usersById[customerId];
         if (clientData != null) {
           booking['customer_name'] = clientData['name'];
           booking['customer_email'] = clientData['email'];
@@ -460,9 +462,11 @@ Future<void> rejectBooking({
     try {
       print('📊 Fetching booking stats for $userType: $userId');
 
-      final filterField = userType.toLowerCase() == 'artisan' 
-          ? 'artisan_id' 
-          : 'client_id';
+      final normalizedUserType = userType.toLowerCase();
+      final filterField =
+          normalizedUserType == 'artisan' || normalizedUserType == 'business'
+              ? 'artisan_id'
+              : 'client_id';
 
       final allBookings = await client
           .from('bookings')
@@ -502,4 +506,6 @@ Future<void> rejectBooking({
     }
   }
 }
+
+
 

@@ -1,0 +1,96 @@
+{
+  "name": "google_play_production_readiness_checklist",
+  "prepared_on": "2026-03-09",
+  "reference_window": {
+    "type": "closed_testing_requirement",
+    "minimum_testers": 12,
+    "minimum_consecutive_days": 14,
+    "example_window": {
+      "start": "2026-02-23",
+      "end": "2026-03-09"
+    }
+  },
+  "items": [
+    {
+      "id": "closed_test_eligibility",
+      "title": "Closed test eligibility",
+      "status": "pending",
+      "checks": [
+        "At least 12 testers are currently opted in.",
+        "Testers remained opted in for 14 consecutive days with no gaps."
+      ]
+    },
+    {
+      "id": "production_access_form",
+      "title": "Production access form quality",
+      "status": "pending",
+      "checks": [
+        "Tester recruitment method is clearly explained.",
+        "Feedback received from testers is summarized with examples.",
+        "Fixes made from testing feedback are clearly listed."
+      ]
+    },
+    {
+      "id": "policy_status",
+      "title": "Policy status",
+      "status": "pending",
+      "checks": [
+        "No active violations in Play Console Policy status.",
+        "No warnings that block publishing."
+      ]
+    },
+    {
+      "id": "app_content",
+      "title": "App content declarations",
+      "status": "pending",
+      "checks": [
+        "Data safety is complete and accurate.",
+        "App access declaration is complete if login is required.",
+        "Ads declaration is correct.",
+        "Content rating is completed.",
+        "Target audience is completed.",
+        "News declaration is completed if applicable."
+      ]
+    },
+    {
+      "id": "store_listing",
+      "title": "Store listing readiness",
+      "status": "pending",
+      "checks": [
+        "Store description matches app behavior.",
+        "Screenshots and media are current and accurate.",
+        "Privacy Policy URL is reachable and consistent with declarations."
+      ]
+    },
+    {
+      "id": "permissions_and_privacy",
+      "title": "Permissions and privacy alignment",
+      "status": "pending",
+      "checks": [
+        "Only required permissions are requested.",
+        "Sensitive permissions are justified in app and in declarations."
+      ]
+    },
+    {
+      "id": "build_quality",
+      "title": "Build quality",
+      "status": "pending",
+      "checks": [
+        "Release AAB installs successfully.",
+        "No startup, login, or navigation crashes on common devices.",
+        "Version code and version name are correct."
+      ]
+    },
+    {
+      "id": "account_health",
+      "title": "Developer account health",
+      "status": "pending",
+      "checks": [
+        "Developer verification and payment profile tasks are complete.",
+        "No unresolved account alerts in Play Console."
+      ]
+    }
+  ],
+  "overall_status": "pending",
+  "notes": ""
+}

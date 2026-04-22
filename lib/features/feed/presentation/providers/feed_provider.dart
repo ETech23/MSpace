@@ -1,4 +1,5 @@
 // lib/features/feed/presentation/providers/feed_provider.dart
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/services/location_service.dart';
@@ -7,6 +8,7 @@ import '../../../home/domain/entities/artisan_entity.dart';
 import '../../../home/domain/repositories/artisan_repository.dart';
 import '../../../home/presentation/providers/artisan_provider.dart';
 import '../../../jobs/data/models/job_model.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 
 final feedSupabaseProvider = Provider<SupabaseClient>((ref) {
   return Supabase.instance.client;
@@ -31,11 +33,21 @@ final feedStreamProvider = StreamProvider<List<FeedItemModel>>((ref) async* {
   final realtimeService = ref.watch(feedRealtimeServiceProvider);
   final supabase = ref.watch(feedSupabaseProvider);
   final artisanRepository = ref.watch(artisanRepositoryProvider);
+  final authState = ref.watch(authProvider);
+  final currentUserId = authState.user?.id;
   final locationService = LocationService();
   var disposed = false;
+  final controller = StreamController<List<FeedItemModel>>();
+  StreamSubscription<List<Map<String, dynamic>>>? feedSub;
+  StreamSubscription<List<Map<String, dynamic>>>? tipsSub;
+  List<Map<String, dynamic>> latestFeedRows = [];
+  List<Map<String, dynamic>> latestTipRows = [];
 
   ref.onDispose(() {
     disposed = true;
+    feedSub?.cancel();
+    tipsSub?.cancel();
+    controller.close();
   });
 
   final homeLocation = ref.watch(homeResolvedLocationProvider);
@@ -54,23 +66,9 @@ final feedStreamProvider = StreamProvider<List<FeedItemModel>>((ref) async* {
     yield _cachedFeedItems!;
   }
 
-  // Fast initial load so first open does not wait for realtime stream emission.
-  try {
-    final initialRows = await supabase
-        .from('feed_items')
-        .select()
-        .order('priority', ascending: false)
-        .order('published_at', ascending: false)
-        .limit(50)
-        .timeout(const Duration(seconds: 8));
-
-    final baseItems = (initialRows as List)
-        .where((row) {
-          final map = row as Map<String, dynamic>;
-          if (!map.containsKey('is_active')) return true;
-          return map['is_active'] == true;
-        })
-        .map((row) => FeedItemModel.fromJson(row as Map<String, dynamic>))
+  Future<List<FeedItemModel>> emitMerged() async {
+    final baseItems = latestFeedRows
+        .map((row) => FeedItemModel.fromJson(row))
         .toList(growable: false);
 
     final filteredBaseItems = await _filterInactiveFeedItems(
@@ -85,10 +83,61 @@ final feedStreamProvider = StreamProvider<List<FeedItemModel>>((ref) async* {
       latitude: latitude,
       longitude: longitude,
       baseItems: filteredBaseItems,
+      currentUserId: currentUserId,
     );
 
-    _cachedFeedItems = merged;
-    yield merged;
+    final tipItems = latestTipRows
+        .map((row) => _tipRowToFeedItem(row))
+        .toList(growable: false);
+
+    final combined = [...tipItems, ...merged]
+      ..sort((a, b) {
+        final byPriority = b.priority.compareTo(a.priority);
+        if (byPriority != 0) return byPriority;
+        return b.publishedAt.compareTo(a.publishedAt);
+      });
+
+    _cachedFeedItems = combined;
+    if (!controller.isClosed) {
+      controller.add(combined);
+    }
+    return combined;
+  }
+
+  // Fast initial load so first open does not wait for realtime stream emission.
+  try {
+    final initialFeedRows = await supabase
+        .from('feed_items')
+        .select()
+        .order('priority', ascending: false)
+        .order('published_at', ascending: false)
+        .limit(50)
+        .timeout(const Duration(seconds: 8));
+
+    final initialTipRows = await supabase
+        .from('feed_tips')
+        .select()
+        .eq('is_active', true)
+        .order('created_at', ascending: false)
+        .limit(10)
+        .timeout(const Duration(seconds: 8));
+
+    latestFeedRows = (initialFeedRows as List)
+        .where((row) {
+          final map = row as Map<String, dynamic>;
+          if (!map.containsKey('is_active')) return true;
+          return map['is_active'] == true;
+        })
+        .map((row) => row as Map<String, dynamic>)
+        .toList(growable: false);
+
+    latestTipRows = (initialTipRows as List)
+        .where((row) => row is Map<String, dynamic>)
+        .map((row) => row as Map<String, dynamic>)
+        .toList(growable: false);
+
+    final combined = await emitMerged();
+    yield combined;
   } catch (e) {
     print('Initial feed load failed: $e');
   }
@@ -96,35 +145,118 @@ final feedStreamProvider = StreamProvider<List<FeedItemModel>>((ref) async* {
   // Realtime updates with retry to avoid "stuck loading" after transient failures.
   while (!disposed) {
     try {
-      await for (final rows in realtimeService.listenToFeedUpdates()) {
-        if (disposed) break;
-        final baseItems = rows
-            .map((row) => FeedItemModel.fromJson(row))
-            .toList(growable: false);
+      feedSub?.cancel();
+      tipsSub?.cancel();
 
-        final filteredBaseItems = await _filterInactiveFeedItems(
-          supabase: supabase,
-          items: baseItems,
-        );
+      feedSub = realtimeService.listenToFeedUpdates().listen((rows) async {
+        if (disposed) return;
+        latestFeedRows = rows;
+        await emitMerged();
+      });
 
-        final merged = await _mergeWithNearbyData(
-          supabase: supabase,
-          artisanRepository: artisanRepository,
-          locationService: locationService,
-          latitude: latitude,
-          longitude: longitude,
-          baseItems: filteredBaseItems,
-        );
+      tipsSub = supabase
+          .from('feed_tips')
+          .stream(primaryKey: ['id'])
+          .eq('is_active', true)
+          .order('created_at', ascending: false)
+          .limit(10)
+          .listen((rows) async {
+        if (disposed) return;
+        latestTipRows = rows;
+        await emitMerged();
+      });
 
-        _cachedFeedItems = merged;
-        yield merged;
-      }
+      yield* controller.stream;
     } catch (e) {
       print('Feed realtime stream failed: $e');
       await Future<void>.delayed(const Duration(seconds: 2));
     }
   }
 });
+
+class FeedTipQuery {
+  final String userId;
+  final String userType;
+
+  const FeedTipQuery({required this.userId, required this.userType});
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FeedTipQuery &&
+          runtimeType == other.runtimeType &&
+          userId == other.userId &&
+          userType == other.userType;
+
+  @override
+  int get hashCode => userId.hashCode ^ userType.hashCode;
+}
+
+final feedTipUnreadCountProvider =
+    FutureProvider.family<int, FeedTipQuery>((ref, query) async {
+  final supabase = ref.watch(feedSupabaseProvider);
+  final userType = query.userType.toLowerCase();
+  final lastSeenRow = await supabase
+      .from('feed_tip_reads')
+      .select('last_seen_at')
+      .eq('user_id', query.userId)
+      .maybeSingle();
+  final lastSeenRaw = lastSeenRow?['last_seen_at'] as String?;
+  final lastSeen =
+      lastSeenRaw == null ? null : DateTime.tryParse(lastSeenRaw);
+
+  final rows = await supabase
+      .from('feed_tips')
+      .select('id,created_at')
+      .eq('is_active', true)
+      .or('user_type.eq.all,user_type.eq.$userType')
+      .order('created_at', ascending: false)
+      .limit(25);
+
+  final hasUnread = (rows as List).any((row) {
+    final createdAtRaw = (row as Map<String, dynamic>)['created_at'] as String?;
+    if (createdAtRaw == null) return false;
+    final createdAt = DateTime.tryParse(createdAtRaw);
+    if (createdAt == null) return false;
+    if (lastSeen == null) return true;
+    return createdAt.isAfter(lastSeen);
+  });
+  return hasUnread ? 1 : 0;
+});
+
+final feedTipActionsProvider = Provider<FeedTipActions>((ref) {
+  final supabase = ref.watch(feedSupabaseProvider);
+  return FeedTipActions(supabase);
+});
+
+class FeedTipActions {
+  FeedTipActions(this._client);
+  final SupabaseClient _client;
+
+  Future<void> markTipsSeen({required String userId}) async {
+    await _client.from('feed_tip_reads').upsert({
+      'user_id': userId,
+      'last_seen_at': DateTime.now().toIso8601String(),
+    });
+  }
+}
+
+FeedItemModel _tipRowToFeedItem(Map<String, dynamic> row) {
+  final createdAt = row['created_at'] as String?;
+  final published = createdAt != null
+      ? DateTime.parse(createdAt).toLocal()
+      : DateTime.now();
+  return FeedItemModel(
+    id: 'tip_${row['id']}',
+    itemType: 'tip',
+    title: row['title'] as String? ?? 'Tip',
+    description: row['tip'] as String? ?? row['description'] as String?,
+    targetUserType: row['user_type'] as String? ?? 'all',
+    publishedAt: published,
+    priority: row['priority'] as int? ?? 0,
+    isActive: row['is_active'] as bool? ?? true,
+  );
+}
 
 Future<List<FeedItemModel>> _mergeWithNearbyData({
   required SupabaseClient supabase,
@@ -133,6 +265,7 @@ Future<List<FeedItemModel>> _mergeWithNearbyData({
   required double latitude,
   required double longitude,
   required List<FeedItemModel> baseItems,
+  required String? currentUserId,
 }) async {
   const radiusKm = 25.0;
 
@@ -161,6 +294,7 @@ Future<List<FeedItemModel>> _mergeWithNearbyData({
       latitude: latitude,
       longitude: longitude,
       radiusKm: radiusKm,
+      currentUserId: currentUserId,
     ),
   ]);
 
@@ -229,6 +363,7 @@ Future<List<FeedItemModel>> _filterInactiveFeedItems({
   }
   Map<String, Map<String, dynamic>> jobById = {};
   if (jobIdsNeedingLookup.isNotEmpty) {
+    // DB column names are fixed; do not rename (customer_id in DB).
     final jobsResponse = await supabase
         .from('jobs')
         .select('id,customer_id,accepted_by')
@@ -298,12 +433,23 @@ Future<List<FeedItemModel>> _fetchNearbyJobs({
         .order('created_at', ascending: false)
         .limit(30);
 
+    const visibleStatuses = {
+      'pending',
+      'matched',
+      'accepted',
+      'completed',
+      'open',
+      'active',
+      'new',
+    };
+
     final jobs = (response as List)
+        .where((row) =>
+            row is Map<String, dynamic> &&
+            row['latitude'] != null &&
+            row['longitude'] != null)
         .map((row) => JobModel.fromJson(row as Map<String, dynamic>))
-        .where((job) => 
-            job.status == 'pending' || 
-            job.status == 'matched' || 
-            job.status == 'completed')
+        .where((job) => visibleStatuses.contains(job.status))
         .toList();
 
     final jobUserIds = <String>{};
@@ -375,6 +521,7 @@ Future<List<FeedItemModel>> _fetchNearbyArtisans({
   required double latitude,
   required double longitude,
   required double radiusKm,
+  required String? currentUserId,
 }) async {
   final items = <FeedItemModel>[];
 
@@ -392,6 +539,8 @@ Future<List<FeedItemModel>> _fetchNearbyArtisans({
       (artisans) {
         for (final artisan in artisans) {
           if (existingArtisanIds.contains(artisan.userId)) continue;
+          // Exclude current user's own profile from feed
+          if (currentUserId != null && artisan.userId == currentUserId) continue;
           items.add(_artisanToFeedItem(artisan));
         }
       },
@@ -407,6 +556,8 @@ Future<List<FeedItemModel>> _fetchNearbyArtisans({
         (artisans) {
           for (final artisan in artisans) {
             if (existingArtisanIds.contains(artisan.userId)) continue;
+            // Exclude current user's own profile from feed
+            if (currentUserId != null && artisan.userId == currentUserId) continue;
             items.add(_artisanToFeedItem(artisan));
           }
         },
@@ -436,3 +587,5 @@ FeedItemModel _artisanToFeedItem(ArtisanEntity artisan) {
     distanceKm: artisan.distance,
   );
 }
+
+

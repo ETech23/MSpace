@@ -87,29 +87,47 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
     try {
       debugPrint('🔍 Direct search for: "$query"');
 
-      // First, get artisan profiles
-      final response = await _supabase
+      // Fetch artisan profiles
+      final artisanResponse = await _supabase
           .from('artisan_profiles')
           .select('*')
           .order('rating', ascending: false);
 
-      debugPrint('📊 Got ${(response as List).length} total profiles');
+      debugPrint('📊 Got ${(artisanResponse as List).length} artisan profiles');
 
-      if (response.isEmpty) return [];
+      // Fetch business profiles
+      final businessResponse = await _supabase
+          .from('business_profiles')
+          .select('*')
+          .order('updated_at', ascending: false);
 
-      // Get user IDs to fetch user details
-      final userIds = response
-          .map((p) => p['user_id'] as String?)
-          .whereType<String>()
-          .toList();
+      debugPrint('📊 Got ${(businessResponse as List).length} business profiles');
+
+      if (artisanResponse.isEmpty && businessResponse.isEmpty) return [];
+
+      // Get all user IDs from both sources
+      final allUserIds = <String>{};
+      for (final p in (artisanResponse as List)) {
+        final uid = p['user_id'] as String?;
+        if (uid != null) allUserIds.add(uid);
+      }
+      for (final p in (businessResponse as List)) {
+        final uid = p['user_id'] as String?;
+        if (uid != null) allUserIds.add(uid);
+      }
+
+      final visibleUserIds = await _getVisibleUserIds(allUserIds.toList());
+      if (visibleUserIds.isEmpty) {
+        return [];
+      }
 
       // Fetch user details
       Map<String, Map<String, dynamic>> usersMap = {};
-      if (userIds.isNotEmpty) {
+      if (visibleUserIds.isNotEmpty) {
         final usersResponse = await _supabase
             .from('users')
             .select('*')
-            .inFilter('id', userIds);
+            .inFilter('id', visibleUserIds.toList());
 
         for (final user in (usersResponse as List)) {
           usersMap[user['id'] as String] = user;
@@ -117,13 +135,37 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
         debugPrint('📊 Got ${usersMap.length} user records');
       }
 
+      // Fetch all reviews for rating calculations
+      Map<String, List<Map<String, dynamic>>> reviewsMap = {};
+      try {
+        final reviewsResponse = await _supabase
+            .from('reviews')
+            .select('artisan_id, rating')
+            .inFilter('artisan_id', visibleUserIds.toList());
+
+        for (final review in (reviewsResponse as List)) {
+          final artisanId = review['artisan_id'] as String?;
+          if (artisanId != null) {
+            reviewsMap.putIfAbsent(artisanId, () => []);
+            reviewsMap[artisanId]!.add(review);
+          }
+        }
+        debugPrint('📊 Got reviews for ${reviewsMap.length} artisans/businesses');
+      } catch (e) {
+        debugPrint('⚠️ Could not fetch reviews: $e');
+      }
+
       // Filter and parse results
       final queryLower = query.toLowerCase().trim();
       final List<ArtisanEntity> results = [];
 
-      for (final profile in response) {
+      // Process artisan profiles
+      for (final profile in (artisanResponse as List)) {
         final userId = profile['user_id'] as String?;
-        final user = userId != null ? usersMap[userId] : null;
+        if (userId == null || !visibleUserIds.contains(userId)) {
+          continue;
+        }
+        final user = usersMap[userId];
         final moderationStatus =
             (user?['moderation_status'] as String?) ?? 'active';
         if (moderationStatus != 'active') {
@@ -139,7 +181,7 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
         final skills = profile['skills'] as List? ?? [];
         final skillsStr = skills.map((s) => s.toString().toLowerCase()).join(' ');
 
-        // Check if query matches any field (with fuzzy matching)
+        // Check if query matches any field
         bool matches = false;
         String matchType = 'none';
 
@@ -167,8 +209,20 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
           }
         }
 
+        // Calculate rating from reviews
+        double rating = 0.0;
+        int reviewCount = 0;
+        if (reviewsMap.containsKey(userId)) {
+          final reviews = reviewsMap[userId]!;
+          reviewCount = reviews.length;
+          if (reviewCount > 0) {
+            rating = reviews
+                .map((r) => (r['rating'] as num?)?.toDouble() ?? 0.0)
+                .reduce((a, b) => a + b) / reviewCount;
+          }
+        }
+
         // Apply rating filter
-        final rating = (profile['rating'] as num?)?.toDouble() ?? 0.0;
         if (minRating != null && rating < minRating) {
           continue;
         }
@@ -209,7 +263,7 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
           latitude: lat,
           longitude: lng,
           rating: rating,
-          reviewCount: (profile['review_count'] as int?) ?? 0,
+          reviewCount: reviewCount,
           isVerified: profile['is_verified'] as bool? ?? false,
           premium: profile['premium'] as bool? ?? false,
           isFeatured: profile['is_featured'] as bool? ?? false,
@@ -234,6 +288,130 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
         ));
       }
 
+      // Process business profiles
+      for (final profile in (businessResponse as List)) {
+        final userId = profile['user_id'] as String?;
+        if (userId == null || !visibleUserIds.contains(userId)) {
+          continue;
+        }
+        final user = usersMap[userId];
+        if (user == null) continue;
+        
+        final moderationStatus = (user['moderation_status'] as String?) ?? 'active';
+        if (moderationStatus != 'active') {
+          continue;
+        }
+
+        // Get searchable fields
+        final businessName = (profile['business_name'] as String? ?? '').toLowerCase();
+        final serviceCategories = profile['service_categories'] as List? ?? [];
+        final serviceCategoriesStr = serviceCategories.map((s) => s.toString().toLowerCase()).join(' ');
+        final description = (profile['description'] as String? ?? '').toLowerCase();
+        final coverageArea = (profile['coverage_area'] as String? ?? '').toLowerCase();
+        final address = (user['address'] as String? ?? '').toLowerCase();
+
+        // Check if query matches any field
+        bool matches = false;
+        String matchType = 'none';
+
+        if (businessName.contains(queryLower) || _fuzzyMatch(queryLower, businessName)) {
+          matches = true;
+          matchType = 'business_name_match';
+        } else if (serviceCategoriesStr.contains(queryLower)) {
+          matches = true;
+          matchType = 'service_category_match';
+        } else if (description.contains(queryLower)) {
+          matches = true;
+          matchType = 'description_match';
+        } else if (address.contains(queryLower)) {
+          matches = true;
+          matchType = 'location_match';
+        } else if (coverageArea.contains(queryLower)) {
+          matches = true;
+          matchType = 'coverage_match';
+        }
+
+        // Apply category filter
+        if (category != null && category.isNotEmpty) {
+          if (!serviceCategoriesStr.contains(category.toLowerCase())) {
+            continue;
+          }
+        }
+
+        // Calculate rating from reviews
+        double rating = 0.0;
+        int reviewCount = 0;
+        if (reviewsMap.containsKey(userId)) {
+          final reviews = reviewsMap[userId]!;
+          reviewCount = reviews.length;
+          if (reviewCount > 0) {
+            rating = reviews
+                .map((r) => (r['rating'] as num?)?.toDouble() ?? 0.0)
+                .reduce((a, b) => a + b) / reviewCount;
+          }
+        }
+
+        // Apply rating filter
+        if (minRating != null && rating < minRating) {
+          continue;
+        }
+
+        if (!matches) continue;
+
+        // Calculate distance if coordinates available
+        double? distance;
+        final lat = (user['latitude'] as num?)?.toDouble();
+        final lng = (user['longitude'] as num?)?.toDouble();
+
+        if (userLat != null && userLng != null && lat != null && lng != null) {
+          distance = _calculateDistance(userLat, userLng, lat, lng);
+          
+          if (maxDistance != null && distance > maxDistance) {
+            continue;
+          }
+        }
+
+        // Create synthetic ID from userId for business since business_profiles has no id column
+        final syntheticId = 'biz_${userId}';
+
+        // Parse to entity
+        results.add(ArtisanEntity(
+          id: syntheticId,
+          userId: userId,
+          name: businessName.isNotEmpty ? businessName : (user['name'] as String? ?? 'Unknown Business'),
+          email: user['email'] as String? ?? '',
+          phoneNumber: profile['contact_phone'] as String? ?? user['phone'] as String?,
+          photoUrl: profile['logo_url'] as String? ?? user['photo_url'] as String?,
+          category: serviceCategories.isNotEmpty ? serviceCategories.first.toString() : 'Business',
+          bio: description.isNotEmpty ? description : null,
+          address: address,
+          latitude: lat,
+          longitude: lng,
+          rating: rating,
+          reviewCount: reviewCount,
+          isVerified: false,
+          premium: false,
+          isFeatured: false,
+          isAvailable: true,
+          distance: distance,
+          skills: serviceCategories.isNotEmpty 
+              ? serviceCategories.map((s) => s.toString()).toList() 
+              : null,
+          completedJobs: 0,
+          certifications: null,
+          hourlyRate: null,
+          experienceYears: null,
+          matchType: matchType,
+          relevanceScore: _calculateRelevance(queryLower, businessName, serviceCategoriesStr, description),
+          createdAt: profile['created_at'] != null 
+              ? DateTime.parse(profile['created_at']) 
+              : DateTime.now(),
+          updatedAt: profile['updated_at'] != null 
+              ? DateTime.parse(profile['updated_at']) 
+              : null,
+        ));
+      }
+
       // Sort by relevance score
       results.sort((a, b) {
         final scoreA = a.relevanceScore ?? 0;
@@ -241,7 +419,7 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
         return scoreB.compareTo(scoreA);
       });
 
-      debugPrint('✅ Search found ${results.length} matching artisans');
+      debugPrint('✅ Search found ${results.length} matching results (artisans & businesses)');
       return results.take(limit).toList();
 
     } on PostgrestException catch (e) {
@@ -400,5 +578,29 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
       'Cleaner',
       'Barber',
     ];
+  }
+
+  Future<Set<String>> _getVisibleUserIds(Iterable<String> userIds) async {
+    final ids = userIds.where((id) => id.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) {
+      return <String>{};
+    }
+
+    try {
+      final response = await _supabase
+          .from('user_settings')
+          .select('user_id, profile_visible')
+          .inFilter('user_id', ids);
+
+      final hiddenIds = (response as List)
+          .where((row) => row['profile_visible'] == false)
+          .map((row) => row['user_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      return ids.where((id) => !hiddenIds.contains(id)).toSet();
+    } catch (_) {
+      return ids.toSet();
+    }
   }
 }

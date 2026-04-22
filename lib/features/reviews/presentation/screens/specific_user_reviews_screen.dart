@@ -1,5 +1,6 @@
 // lib/features/reviews/presentation/screens/specific_user_reviews_screen.dart
 import 'package:flutter/material.dart';
+import '../../../../core/constants/role_labels.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/review_provider.dart';
 import '../../domain/entities/review_entity.dart';
@@ -32,11 +33,11 @@ class _SpecificUserReviewsScreenState
   }
 
   void _loadReviews() {
-    if (widget.userType == 'artisan') {
+    if (widget.userType == 'artisan' || widget.userType == 'business') {
       // Load reviews received by this artisan
       ref.read(reviewProvider.notifier).loadArtisanReviews(widget.userId);
     } else {
-      // Load reviews given by this customer
+      // Load reviews given by this Client
       ref.read(reviewProvider.notifier).loadUserReviews(widget.userId);
     }
   }
@@ -50,7 +51,7 @@ class _SpecificUserReviewsScreenState
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.userType == 'artisan'
+          widget.userType == 'artisan' || widget.userType == 'business'
             ? 'Reviews for ${widget.userName}'
             : 'Reviews by ${widget.userName}',
         ),
@@ -259,9 +260,9 @@ class _SpecificUserReviewsScreenState
             ),
             const SizedBox(height: 12),
             Text(
-              widget.userType == 'artisan'
+              widget.userType == 'artisan' || widget.userType == 'business'
                   ? '${widget.userName} hasn\'t received any reviews yet.'
-                  : '${widget.userName} hasn\'t written any reviews yet.',
+                  : '${widget.userName} hasn\'t written any ${RoleLabels.client} reviews yet.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -277,11 +278,11 @@ class _SpecificUserReviewsScreenState
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     
-    // Show reviewer for artisan's reviews, show artisan for customer's reviews
-    final displayName = widget.userType == 'artisan' 
+    // Show reviewer for artisan's reviews, show artisan for Client's reviews
+    final displayName = widget.userType == 'artisan' || widget.userType == 'business'
         ? review.reviewerName 
         : review.artisanName;
-    final displayPhoto = widget.userType == 'artisan'
+    final displayPhoto = widget.userType == 'artisan' || widget.userType == 'business'
         ? review.reviewerPhotoUrl
         : review.artisanPhotoUrl;
 
@@ -408,3 +409,4 @@ class _SpecificUserReviewsScreenState
     }
   }
 }
+

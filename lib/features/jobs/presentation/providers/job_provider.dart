@@ -109,11 +109,11 @@ class JobNotifier extends StateNotifier<JobState> {
     }
   }
 /**
-  Future<void> loadCustomerJobs(String customerId) async {
+  Future<void> loadcustomerJobs(String customerId) async {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      final jobs = await _repository.getCustomerJobs(customerId);
+      final jobs = await _repository.getcustomerJobs(customerId);
       state = state.copyWith(
         isLoading: false,
         customerJobs: jobs,
@@ -127,11 +127,11 @@ class JobNotifier extends StateNotifier<JobState> {
   }**/
 
 
-Future<void> loadCustomerJobs(String userId) async {
+Future<void> loadcustomerJobs(String userId) async {
   state = state.copyWith(isLoading: true, error: null);
 
   try {
-    final jobs = await _repository.getCustomerJobs(userId);
+    final jobs = await _repository.getcustomerJobs(userId);
     state = state.copyWith(
       isLoading: false,
       customerJobs: jobs,
@@ -315,3 +315,5 @@ final unreadMatchesCountProvider = Provider<int>((ref) {
       .where((m) => m.viewedAt == null)
       .length;
 });
+
+

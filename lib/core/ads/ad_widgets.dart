@@ -145,7 +145,7 @@ class NativeAdWidget extends StatefulWidget {
   const NativeAdWidget({
     super.key,
     this.padding = const EdgeInsets.symmetric(vertical: 8),
-    this.height = 260,
+    this.height = 320,
   });
 
   @override
@@ -205,6 +205,8 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
       adUnitId: nextUnitId,
       factoryId: 'listTile',
       request: const AdRequest(),
+      nativeAdOptions:
+          NativeAdOptions(mediaAspectRatio: MediaAspectRatio.portrait),
       listener: NativeAdListener(
         onAdLoaded: (_) {
           if (!mounted) return;

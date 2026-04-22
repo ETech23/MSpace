@@ -49,6 +49,7 @@ abstract class TrustRepository {
     required String status,
     String? resolutionNotes,
   });
+  Future<Either<Failure, DisputeEntity>> getDisputeById(String disputeId);
 
   // Moderation reports
   Future<Either<Failure, ReportEntity>> submitReport({

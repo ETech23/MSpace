@@ -8,7 +8,7 @@ import 'package:artisan_marketplace/features/jobs/data/models/job_model.dart';
 
 abstract class JobRepository {
   Future<JobModel> postJob(JobFormModel form, String customerId);
-  Future<List<JobModel>> getCustomerJobs(String customerId);
+  Future<List<JobModel>> getcustomerJobs(String customerId);
   Future<JobModel> getJobById(String jobId);
   Future<List<JobMatchModel>> getArtisanJobMatches(String artisanId);
   Future<JobModel> acceptJob(String jobId, String artisanId);
@@ -28,8 +28,8 @@ class JobRepositoryImpl implements JobRepository {
   }
 
   @override
-  Future<List<JobModel>> getCustomerJobs(String customerId) {
-    return remoteDataSource.getCustomerJobs(customerId);
+  Future<List<JobModel>> getcustomerJobs(String customerId) {
+    return remoteDataSource.getcustomerJobs(customerId);
   }
 
   @override
@@ -62,3 +62,5 @@ class JobRepositoryImpl implements JobRepository {
     return remoteDataSource.cancelJob(jobId);
   }
 }
+
+

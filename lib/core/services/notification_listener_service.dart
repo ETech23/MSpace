@@ -128,7 +128,7 @@ class NotificationListenerService {
         _notificationService.sendJobMatchedNotification(
           jobId: jobId,
           jobTitle: data['jobTitle'] ?? 'New Job',
-          customerName: data['customerName'] ?? 'Customer',
+          customerName: data['customerName'] ?? 'Client',
           distanceKm: (data['distanceKm'] as num?)?.toDouble() ?? 0.0,
           matchScore: (data['matchScore'] as num?)?.toDouble() ?? 0.0,
         );
@@ -269,3 +269,4 @@ class NotificationListenerService {
     }
   }
 }
+

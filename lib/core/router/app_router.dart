@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
+import '../../features/auth/presentation/screens/onboarding_screen.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/home/presentation/screens/splash_screen.dart';
@@ -23,12 +24,19 @@ import '../../features/booking/presentation/screens/create_booking_screen.dart';
 import '../../features/booking/presentation/screens/booking_list_screen.dart';
 import '../../features/booking/presentation/screens/booking_detail_screen.dart';
 import '../../features/booking/domain/entities/booking_entity.dart';
+import '../../features/invoices/presentation/screens/invoice_preview_screen.dart';
+import '../../features/invoices/presentation/screens/invoice_hub_screen.dart';
 import '../../features/search/presentation/screens/search_screen.dart';
 import '../../features/profile/presentation/screens/notification_settings_screen.dart';
 import '../../features/profile/presentation/screens/privacy_settings_screen.dart';
+import '../../features/profile/presentation/screens/profile_analytics_screen.dart';
 import '../../features/profile/presentation/screens/saved_artisans_screen.dart';
 import '../../features/notifications/presentation/screens/notifications_screen.dart';
 import '../../features/messaging/presentation/screens/conversations_screen.dart';
+import '../../features/referrals/presentation/screens/referral_screen.dart';
+import '../../features/referrals/presentation/screens/referral_leaderboard_screen.dart';
+import '../../features/labs/presentation/screens/hidden_feature_a.dart';
+import '../../features/labs/presentation/screens/hidden_feature_b.dart';
 import '../../features/messaging/presentation/screens/chat_screen.dart';
 import 'package:artisan_marketplace/features/home/presentation/screens/settings_screen.dart';
 import 'package:artisan_marketplace/features/reviews/presentation/screens/specific_user_reviews_screen.dart';
@@ -46,6 +54,7 @@ import '../../features/trust/presentation/screens/dispute_hearing_screen.dart';
 import '../../features/trust/presentation/screens/admin_user_management_screen.dart';
 import '../../features/trust/presentation/screens/admin_platform_analytics_screen.dart';
 import '../config/feature_flags_service.dart';
+import '../services/install_referrer_service.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -68,6 +77,20 @@ Widget _buildResetPasswordPage(GoRouterState state) {
   return ResetPasswordScreen(
     accessToken: params['access_token'] ?? params['code'],
   );
+}
+
+FeedTab _feedTabFromQuery(GoRouterState state) {
+  switch (state.uri.queryParameters['tab']?.trim().toLowerCase()) {
+    case 'jobs':
+      return FeedTab.jobs;
+    case 'artisans':
+      return FeedTab.artisans;
+    case 'tips':
+      return FeedTab.tips;
+    case 'nearby':
+    default:
+      return FeedTab.nearby;
+  }
 }
 
 bool _isLoginCallbackUri(Uri uri) {
@@ -169,10 +192,39 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/feed',
         name: 'feed',
-        builder: (context, state) => const FeedScreen(),
+        builder: (context, state) => FeedScreen(
+          initialTab: _feedTabFromQuery(state),
+        ),
       ),
 
       // ── Auth ────────────────────────────────────────────────────────────────
+      GoRoute(
+        path: '/onboarding',
+        name: 'onboarding',
+        builder: (context, state) => const OnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/r/:code',
+        name: 'referral-link',
+        redirect: (context, state) {
+          final code = state.pathParameters['code'];
+          if (code != null && code.isNotEmpty) {
+            InstallReferrerService().setPendingReferralCode(code);
+          }
+          return '/register';
+        },
+      ),
+      GoRoute(
+        path: '/ref/:code',
+        name: 'referral-link-alt',
+        redirect: (context, state) {
+          final code = state.pathParameters['code'];
+          if (code != null && code.isNotEmpty) {
+            InstallReferrerService().setPendingReferralCode(code);
+          }
+          return '/register';
+        },
+      ),
       GoRoute(
         path: '/login',
         name: 'login',
@@ -311,6 +363,26 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'settings',
         builder: (context, state) => const SettingsScreen(),
       ),
+      GoRoute(
+        path: '/referrals',
+        name: 'referrals',
+        builder: (context, state) => const ReferralScreen(),
+      ),
+      GoRoute(
+        path: '/referrals/leaderboard',
+        name: 'referrals-leaderboard',
+        builder: (context, state) => const ReferralLeaderboardScreen(),
+      ),
+      GoRoute(
+        path: '/labs/alpha',
+        name: 'hidden-feature-a',
+        builder: (context, state) => const HiddenFeatureAScreen(),
+      ),
+      GoRoute(
+        path: '/labs/beta',
+        name: 'hidden-feature-b',
+        builder: (context, state) => const HiddenFeatureBScreen(),
+      ),
 
       // ── Reviews ─────────────────────────────────────────────────────────────
       GoRoute(
@@ -424,6 +496,36 @@ final routerProvider = Provider<GoRouter>((ref) {
           return BookingDetailScreen(
               bookingId: bookingId, booking: booking);
         },
+      ),
+      GoRoute(
+        path: '/bookings/:id/invoice',
+        name: 'booking-invoice',
+        builder: (context, state) {
+          final booking = state.extra as BookingEntity?;
+          if (booking == null) {
+            return _buildFeatureDisabledScreen(
+              context: context,
+              title: 'Invoice Unavailable',
+              message: 'Open this invoice from a booking details page.',
+            );
+          }
+          return InvoicePreviewScreen(booking: booking);
+        },
+      ),
+      GoRoute(
+        path: '/profile/invoices/new',
+        name: 'profile-invoice-new',
+        builder: (context, state) => const InvoicePreviewScreen(),
+      ),
+      GoRoute(
+        path: '/profile/invoices',
+        name: 'profile-invoices',
+        builder: (context, state) => const InvoiceHubScreen(),
+      ),
+      GoRoute(
+        path: '/profile/analytics',
+        name: 'profile-analytics',
+        builder: (context, state) => const ProfileAnalyticsScreen(),
       ),
       GoRoute(
         path: '/bookings/:id/dispute',

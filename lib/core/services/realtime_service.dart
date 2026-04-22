@@ -44,7 +44,7 @@ class RealtimeService {
   }
 
   // ================================================================
-  // 2. CUSTOMER: Listen for job status changes
+  // 2. Client: Listen for job status changes
   // ================================================================
   SupabaseStreamBuilder listenToJobUpdates(String jobId) {
     _jobChannel = _client
@@ -71,9 +71,9 @@ class RealtimeService {
   }
 
   // ================================================================
-  // 3. CUSTOMER: Listen for all own jobs
+  // 3. Client: Listen for all own jobs
   // ================================================================
-  Stream<List<Map<String, dynamic>>> listenToCustomerJobs(String customerId) {
+  Stream<List<Map<String, dynamic>>> listenTocustomerJobs(String customerId) {
     return _client
         .from('jobs')
         .stream(primaryKey: ['id'])
@@ -134,3 +134,6 @@ class RealtimeService {
     _feedChannel?.unsubscribe();
   }
 }
+
+
+

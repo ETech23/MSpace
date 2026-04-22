@@ -151,8 +151,8 @@ class _LocationCaptureScreenState extends ConsumerState<LocationCaptureScreen>
       context,
       title: 'Allow location access?',
       message: widget.isArtisan
-          ? 'We use your location so clients can discover your services nearby.'
-          : 'We use your location to find artisans near you.',
+          ? 'We only need your location once to match you with nearby clients.'
+          : 'We only need your location once to find artisans and businesses near you.',
       primaryLabel: 'Allow',
       secondaryLabel: 'Not now',
     );
@@ -244,9 +244,16 @@ class _LocationCaptureScreenState extends ConsumerState<LocationCaptureScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Location saved successfully!')),
         );
-        
-        // Navigate to home
-        context.go('/home');
+
+        final userRow = await supabase
+            .from('users')
+            .select('user_type')
+            .eq('id', widget.userId)
+            .maybeSingle();
+        final isBusiness = userRow?['user_type'] == 'business';
+
+        // Navigate to business profile if needed
+        context.go(isBusiness ? '/profile/edit' : '/home');
       }
     } catch (e) {
       if (mounted) {
@@ -267,7 +274,7 @@ class _LocationCaptureScreenState extends ConsumerState<LocationCaptureScreen>
         content: Text(
           widget.isArtisan
               ? 'Clients won\'t be able to find you easily without your location. You can add it later in settings.'
-              : 'You can add your location later in settings to find artisans near you.',
+              : 'You can add your location later in settings to find artisans and businesses near you.',
         ),
         actions: [
           TextButton(
@@ -283,7 +290,14 @@ class _LocationCaptureScreenState extends ConsumerState<LocationCaptureScreen>
     );
 
     if (confirm == true && mounted) {
-      context.go('/home');
+      final supabase = Supabase.instance.client;
+      final userRow = await supabase
+          .from('users')
+          .select('user_type')
+          .eq('id', widget.userId)
+          .maybeSingle();
+      final isBusiness = userRow?['user_type'] == 'business';
+      context.go(isBusiness ? '/profile/edit' : '/home');
     }
   }
 
