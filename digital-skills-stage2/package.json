@@ -1,0 +1,36 @@
+{
+  "name": "digital-skills-stage2",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "export": "next build",
+    "deploy": "firebase deploy --config firebase.json",
+    "deploy:hosting": "firebase deploy --config firebase.json --only hosting",
+    "deploy:rules": "firebase deploy --config firebase.json --only firestore:rules,firestore:indexes"
+  },
+  "dependencies": {
+    "@tailwindcss/forms": "^0.5.10",
+    "axios": "^1.7.9",
+    "framer-motion": "^12.23.12",
+    "lucide-react": "^0.468.0",
+    "next": "15.4.3",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@types/node": "^20.19.9",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.31.0",
+    "eslint-config-next": "15.4.3",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3"
+  }
+}

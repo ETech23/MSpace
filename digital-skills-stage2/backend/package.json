@@ -1,0 +1,27 @@
+{
+  "name": "digital-skills-stage2-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Express backend for the Digital Skills Laptop Support Program Stage 2 application.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "check": "node --check app.js && node --check server.js && node --check config/firebase.js && node --check config/paystack.js && node --check controllers/ApplicantController.js && node --check controllers/PaymentController.js && node --check controllers/WebhookController.js && node --check controllers/AdminController.js && node --check services/FirestoreService.js && node --check services/PaystackService.js && node --check services/EmailService.js && node --check services/ApplicantService.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "compression": "^1.7.5",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "firebase-admin": "^12.7.0",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0"
+  }
+}

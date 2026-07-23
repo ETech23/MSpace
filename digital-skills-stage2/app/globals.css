@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  background: #f3f8f5;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(201, 176, 55, 0.16), transparent 28rem),
+    linear-gradient(135deg, #f3f8f5 0%, #ffffff 42%, #edf7f1 100%);
+  color: #14211b;
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at top left, rgba(201, 176, 55, 0.16), transparent 28rem),
+    linear-gradient(135deg, #09130f 0%, #13241d 48%, #0b1813 100%);
+  color: #f7fbf8;
+}
+
+::selection {
+  background: rgba(201, 176, 55, 0.32);
+}
+
+@layer components {
+  .glass-panel {
+    @apply border border-white/60 bg-white/80 shadow-glass backdrop-blur-2xl dark:border-white/10 dark:bg-white/10;
+  }
+
+  .field-label {
+    @apply text-sm font-semibold text-brand-ink dark:text-white;
+  }
+
+  .input-base {
+    @apply mt-2 w-full rounded-lg border border-emerald-900/10 bg-white/90 px-4 py-3 text-sm text-brand-ink outline-none transition focus:border-brand-green focus:ring-4 focus:ring-brand-green/20 dark:border-white/10 dark:bg-white/10 dark:text-white dark:placeholder:text-white/50;
+  }
+
+  .error-text {
+    @apply mt-1 text-xs font-medium text-red-600 dark:text-red-300;
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded-lg bg-emerald-900/10 dark:bg-white/10;
+  }
+}

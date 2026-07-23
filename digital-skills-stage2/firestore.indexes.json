@@ -1,0 +1,37 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "Applicants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "paymentStatus", "order": "ASCENDING" },
+        { "fieldPath": "submissionTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Applicants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "submissionTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Applicants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "preferredDigitalSkill", "order": "ASCENDING" },
+        { "fieldPath": "submissionTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Applicants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "stage", "order": "ASCENDING" },
+        { "fieldPath": "submissionTime", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

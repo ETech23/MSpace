@@ -1,0 +1,11 @@
+.next
+out
+node_modules
+backend/node_modules
+.env.local
+.env.production
+backend/.env
+backend/.env.*
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

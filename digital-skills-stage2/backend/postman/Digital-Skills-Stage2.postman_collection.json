@@ -1,0 +1,135 @@
+{
+  "info": {
+    "name": "Digital Skills Stage 2 API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "adminKey", "value": "replace-with-admin-key" },
+    { "key": "csrfToken", "value": "" },
+    { "key": "applicantId", "value": "DSP-2026-000458" },
+    { "key": "paymentReference", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    },
+    {
+      "name": "Get CSRF Token",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/csrf"
+      }
+    },
+    {
+      "name": "Create Applicant",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-CSRF-Token", "value": "{{csrfToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"applicantId\": \"{{applicantId}}\",\n  \"firstName\": \"Ada\",\n  \"lastName\": \"Okafor\",\n  \"email\": \"ada@example.com\",\n  \"phone\": \"08012345678\",\n  \"state\": \"Lagos\",\n  \"lga\": \"Ikeja\",\n  \"gender\": \"Female\",\n  \"age\": \"24\",\n  \"highestEducation\": \"Bachelor's Degree\",\n  \"employmentStatus\": \"Student\",\n  \"preferredDigitalSkill\": \"Frontend Development\",\n  \"motivation\": \"I want to learn this skill so I can build useful digital products and improve my career opportunities.\",\n  \"currentOccupation\": \"Student\",\n  \"ownsLaptop\": \"No\",\n  \"internetAvailability\": \"Reliable\",\n  \"facebookProfile\": \"https://facebook.com/example\",\n  \"xProfile\": \"https://x.com/example\",\n  \"linkedInProfile\": \"https://linkedin.com/in/example\",\n  \"socialFollowers\": \"1200\",\n  \"emergencyContactName\": \"Chidi Okafor\",\n  \"emergencyContactPhone\": \"08023456789\",\n  \"confirmation\": true\n}"
+        },
+        "url": "{{baseUrl}}/api/applicants"
+      }
+    },
+    {
+      "name": "Get Applicant",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/applicants/{{applicantId}}"
+      }
+    },
+    {
+      "name": "Update Applicant",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-CSRF-Token", "value": "{{csrfToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"internetAvailability\": \"Reliable\",\n  \"currentOccupation\": \"Intern\"\n}"
+        },
+        "url": "{{baseUrl}}/api/applicants/{{applicantId}}"
+      }
+    },
+    {
+      "name": "Initialize Payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-CSRF-Token", "value": "{{csrfToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"applicantId\": \"{{applicantId}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/payments/initialize"
+      }
+    },
+    {
+      "name": "Verify Payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-CSRF-Token", "value": "{{csrfToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"applicantId\": \"{{applicantId}}\",\n  \"reference\": \"{{paymentReference}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/payments/verify"
+      }
+    },
+    {
+      "name": "Paystack Webhook",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-paystack-signature", "value": "computed-signature-required" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event\": \"charge.success\",\n  \"data\": {\n    \"reference\": \"{{paymentReference}}\"\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/paystack/webhook"
+      }
+    },
+    {
+      "name": "Admin Dashboard",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-Admin-Key", "value": "{{adminKey}}" }],
+        "url": "{{baseUrl}}/api/admin/dashboard"
+      }
+    },
+    {
+      "name": "Admin Applicants",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-Admin-Key", "value": "{{adminKey}}" }],
+        "url": "{{baseUrl}}/api/admin/applicants"
+      }
+    },
+    {
+      "name": "Admin Payments",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-Admin-Key", "value": "{{adminKey}}" }],
+        "url": "{{baseUrl}}/api/admin/payments"
+      }
+    }
+  ]
+}
