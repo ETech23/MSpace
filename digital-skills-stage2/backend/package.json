@@ -5,7 +5,7 @@
   "description": "Express backend for the Digital Skills Laptop Support Program Stage 2 application.",
   "main": "server.js",
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "scripts": {
     "start": "node server.js",
