@@ -24,16 +24,20 @@ class FirestoreService {
   async createApplicant(payload, metadata) {
     const applicantId = payload.applicantId.toUpperCase();
     const applicantRef = this.applicantsCollection().doc(applicantId);
-    const paymentReference = buildPaymentReference(applicantId);
-    const paymentRef = this.paymentsCollection().doc(paymentReference);
 
     await this.db.runTransaction(async (transaction) => {
       const existing = await transaction.get(applicantRef);
-      if (existing.exists) {
+      const existingData = existing.exists ? existing.data() : null;
+
+      if (existingData?.paymentStatus === "Paid") {
         throw new AppError(409, "This Applicant ID has already completed Stage 2.");
       }
 
-      transaction.create(applicantRef, {
+      const paymentReference =
+        existingData?.paymentReference || buildPaymentReference(applicantId);
+      const paymentRef = this.paymentsCollection().doc(paymentReference);
+
+      transaction.set(applicantRef, {
         ...payload,
         applicantId,
         email: payload.email.toLowerCase(),
@@ -50,7 +54,7 @@ class FirestoreService {
         updatedAt: FieldValue.serverTimestamp()
       });
 
-      transaction.create(paymentRef, {
+      transaction.set(paymentRef, {
         applicantId,
         amount: AMOUNT_KOBO,
         currency: CURRENCY,
@@ -69,13 +73,16 @@ class FirestoreService {
       });
 
       transaction.create(this.db.collection("AuditLogs").doc(), {
-        action: "stage2_application_created",
+        action: existing.exists ? "stage2_application_resubmitted" : "stage2_application_created",
         applicantId,
         ipAddress: metadata.ipAddress,
         browser: metadata.browser,
         createdAt: FieldValue.serverTimestamp()
       });
     });
+
+    const snapshot = await this.applicantsCollection().doc(applicantId).get();
+    const paymentReference = String(snapshot.data()?.paymentReference ?? "");
 
     return {
       applicantId,

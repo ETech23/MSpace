@@ -149,15 +149,58 @@ export function Stage2Application() {
   }
 
   return (
-    <main className="mx-auto grid min-h-screen max-w-7xl gap-7 px-4 py-5 sm:px-6 md:grid-cols-[0.92fr_1.08fr] md:px-8 md:py-8">
-      <section className="flex flex-col gap-5">
-        <div className="flex items-center justify-between">
-          <div className="inline-flex items-center gap-2 rounded-full border border-brand-green/20 bg-white/80 px-4 py-2 text-xs font-bold uppercase tracking-wide text-brand-green dark:border-white/10 dark:bg-white/10 dark:text-brand-gold">
-            <Sparkles size={15} />
-            Stage 2 Verification
+    <>
+      <AnimatePresence>
+        {isBusy ? (
+          <motion.div
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-md"
+            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+            role="alertdialog"
+            aria-live="assertive"
+            aria-busy="true"
+          >
+            <motion.div
+              animate={{ y: 0, scale: 1, opacity: 1 }}
+              className="w-full max-w-md rounded-3xl border border-white/15 bg-[#08130f]/95 p-7 text-center text-white shadow-2xl shadow-black/40"
+              initial={{ y: 18, scale: 0.98, opacity: 0 }}
+              transition={{ duration: 0.22 }}
+            >
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-gold/15 text-brand-gold">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  className="h-8 w-8 rounded-full border-4 border-brand-gold/25 border-t-brand-gold"
+                  transition={{ repeat: Infinity, ease: "linear", duration: 0.9 }}
+                />
+              </div>
+              <p className="mt-5 text-xs font-bold uppercase tracking-[0.3em] text-brand-gold/90">
+                Please wait
+              </p>
+              <h3 className="mt-3 text-2xl font-black">
+                {workingStatusTitle(status)}
+              </h3>
+              <p className="mt-3 text-sm leading-6 text-white/75">
+                {workingStatusDescription(status)}
+              </p>
+              <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-white/85">
+                Do not refresh or close this page while we finish preparing your
+                payment.
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <main className="mx-auto grid min-h-screen max-w-7xl gap-7 px-4 py-5 sm:px-6 md:grid-cols-[0.92fr_1.08fr] md:px-8 md:py-8">
+        <section className="flex flex-col gap-5">
+          <div className="flex items-center justify-between">
+            <div className="inline-flex items-center gap-2 rounded-full border border-brand-green/20 bg-white/80 px-4 py-2 text-xs font-bold uppercase tracking-wide text-brand-green dark:border-white/10 dark:bg-white/10 dark:text-brand-gold">
+              <Sparkles size={15} />
+              Stage 2 Verification
+            </div>
+            <ThemeToggle />
           </div>
-          <ThemeToggle />
-        </div>
 
         <motion.div
           animate={{ opacity: 1, y: 0 }}
@@ -199,14 +242,14 @@ export function Stage2Application() {
             </div>
           </div>
         </motion.div>
-      </section>
+        </section>
 
-      <motion.section
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-panel rounded-2xl p-5 sm:p-7"
-        initial={{ opacity: 0, y: 18 }}
-        transition={{ delay: 0.1, duration: 0.45 }}
-      >
+        <motion.section
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-panel rounded-2xl p-5 sm:p-7"
+          initial={{ opacity: 0, y: 18 }}
+          transition={{ delay: 0.1, duration: 0.45 }}
+        >
         <div className="flex flex-col gap-3 border-b border-emerald-900/10 pb-5 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-2xl font-black text-brand-ink dark:text-white">
@@ -432,9 +475,36 @@ export function Stage2Application() {
             {status === "idle" ? <ArrowRight size={18} /> : <CheckCircle2 size={18} />}
           </button>
         </form>
-      </motion.section>
-    </main>
+        </motion.section>
+      </main>
+    </>
   );
+}
+
+function workingStatusTitle(status: "idle" | "saving" | "checkout" | "verifying") {
+  switch (status) {
+    case "saving":
+      return "Saving your application";
+    case "checkout":
+      return "Opening secure payment";
+    case "verifying":
+      return "Verifying your payment";
+    default:
+      return "Working on your request";
+  }
+}
+
+function workingStatusDescription(status: "idle" | "saving" | "checkout" | "verifying") {
+  switch (status) {
+    case "saving":
+      return "We are preparing your application details and generating your payment reference.";
+    case "checkout":
+      return "Please wait while we launch Paystack securely.";
+    case "verifying":
+      return "Your payment was successful. We are confirming it now and updating your record.";
+    default:
+      return "We are processing your request.";
+  }
 }
 
 function statusLabel(status: "idle" | "saving" | "checkout" | "verifying") {
