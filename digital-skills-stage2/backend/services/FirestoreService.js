@@ -24,6 +24,8 @@ class FirestoreService {
   async createApplicant(payload, metadata) {
     const applicantId = payload.applicantId.toUpperCase();
     const applicantRef = this.applicantsCollection().doc(applicantId);
+    const paymentReference = buildPaymentReference(applicantId);
+    const paymentRef = this.paymentsCollection().doc(paymentReference);
 
     await this.db.runTransaction(async (transaction) => {
       const existing = await transaction.get(applicantRef);
@@ -32,10 +34,6 @@ class FirestoreService {
       if (existingData?.paymentStatus === "Paid") {
         throw new AppError(409, "This Applicant ID has already completed Stage 2.");
       }
-
-      const paymentReference =
-        existingData?.paymentReference || buildPaymentReference(applicantId);
-      const paymentRef = this.paymentsCollection().doc(paymentReference);
 
       transaction.set(applicantRef, {
         ...payload,
@@ -82,14 +80,14 @@ class FirestoreService {
     });
 
     const snapshot = await this.applicantsCollection().doc(applicantId).get();
-    const paymentReference = String(snapshot.data()?.paymentReference ?? "");
+    const savedPaymentReference = String(snapshot.data()?.paymentReference ?? paymentReference);
 
     return {
       applicantId,
       amount: AMOUNT_KOBO,
       currency: CURRENCY,
       email: payload.email.toLowerCase(),
-      paymentReference
+      paymentReference: savedPaymentReference
     };
   }
 
