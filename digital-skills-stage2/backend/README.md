@@ -142,6 +142,7 @@ Use Render Logs for:
 
 Common issues:
 
+- `Firebase Admin is unavailable`: the server can still start, but Firestore-backed routes will return a 503 until the Firebase service account is corrected.
 - `Firebase Admin environment variables are not configured`: check service account values.
 - `Invalid Paystack webhook signature`: confirm `PAYSTACK_WEBHOOK_SECRET` equals the current Paystack secret key.
 - `Origin is not allowed by CORS`: add the frontend origin to `FRONTEND_URL`.

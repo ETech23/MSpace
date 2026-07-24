@@ -1,4 +1,5 @@
 const admin = require("firebase-admin");
+const { AppError } = require("../middleware/errorHandler");
 const { normalizePrivateKey } = require("../utils/helpers");
 
 function normalizeServiceAccount(serviceAccount) {
@@ -55,28 +56,61 @@ function getServiceAccount() {
   };
 }
 
+let firebaseApp = null;
+let firestoreDb = null;
+let firebaseInitError = null;
+
 function initializeFirebase() {
-  if (admin.apps.length) {
-    return admin.app();
+  if (firebaseApp) {
+    return firebaseApp;
   }
 
-  const serviceAccount = getServiceAccount();
-
   try {
-    return admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      projectId: serviceAccount.projectId || serviceAccount.project_id
-    });
+    const serviceAccount = getServiceAccount();
+
+    firebaseApp = admin.apps.length
+      ? admin.app()
+      : admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: serviceAccount.projectId || serviceAccount.project_id
+      });
+    firestoreDb = admin.firestore();
+    firebaseInitError = null;
+    return firebaseApp;
   } catch (error) {
-    throw new Error(
-      `Firebase Admin failed to initialize. Check FIREBASE_SERVICE_ACCOUNT_JSON_BASE64, FIREBASE_SERVICE_ACCOUNT_JSON, or FIREBASE_PRIVATE_KEY for a valid PEM private key. Original error: ${error.message}`
+    firebaseInitError = new AppError(
+      503,
+      `Firebase Admin is unavailable. Check FIREBASE_SERVICE_ACCOUNT_JSON_BASE64, FIREBASE_SERVICE_ACCOUNT_JSON, or FIREBASE_PRIVATE_KEY. Original error: ${error.message}`
     );
+    firebaseInitError.cause = error;
+    return null;
   }
 }
 
-initializeFirebase();
+function getDb() {
+  if (firestoreDb) {
+    return firestoreDb;
+  }
+
+  if (firebaseInitError) {
+    throw firebaseInitError;
+  }
+
+  initializeFirebase();
+
+  if (firestoreDb) {
+    return firestoreDb;
+  }
+
+  throw firebaseInitError || new AppError(503, "Firebase Admin is unavailable.");
+}
+
+function isFirebaseReady() {
+  return Boolean(firestoreDb) && !firebaseInitError;
+}
 
 module.exports = {
   admin,
-  db: admin.firestore()
+  getDb,
+  isFirebaseReady
 };

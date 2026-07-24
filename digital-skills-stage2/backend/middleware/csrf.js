@@ -1,19 +1,49 @@
 const crypto = require("node:crypto");
 const { safeEqual } = require("../utils/helpers");
 
+const CSRF_TTL_MS = 2 * 60 * 60 * 1000;
+
+function getCsrfSecret() {
+  const secret = String(process.env.ADMIN_API_KEY ?? process.env.PAYSTACK_SECRET_KEY ?? "");
+
+  if (!secret) {
+    throw new Error("CSRF secret is not configured.");
+  }
+
+  return secret;
+}
+
+function createCsrfToken() {
+  const issuedAt = Date.now().toString(36);
+  const nonce = crypto.randomBytes(24).toString("hex");
+  const payload = `${issuedAt}.${nonce}`;
+  const signature = crypto.createHmac("sha256", getCsrfSecret()).update(payload).digest("hex");
+  return `${payload}.${signature}`;
+}
+
+function isValidCsrfToken(token) {
+  const parts = String(token ?? "").split(".");
+  if (parts.length !== 3) {
+    return false;
+  }
+
+  const [issuedAt, nonce, signature] = parts;
+  const timestamp = Number.parseInt(issuedAt, 36);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return false;
+  }
+
+  if (Date.now() - timestamp > CSRF_TTL_MS) {
+    return false;
+  }
+
+  const payload = `${issuedAt}.${nonce}`;
+  const expectedSignature = crypto.createHmac("sha256", getCsrfSecret()).update(payload).digest("hex");
+  return safeEqual(expectedSignature, signature);
+}
+
 function issueCsrfToken(request, response) {
-  const token = crypto.randomBytes(32).toString("hex");
-  const secure = process.env.NODE_ENV === "production";
-
-  response.cookie("stage2_csrf", token, {
-    httpOnly: true,
-    secure,
-    sameSite: secure ? "none" : "lax",
-    maxAge: 2 * 60 * 60 * 1000,
-    path: "/"
-  });
-
-  response.status(200).json({ csrfToken: token });
+  response.status(200).json({ csrfToken: createCsrfToken() });
 }
 
 function requireCsrf(request, response, next) {
@@ -27,10 +57,9 @@ function requireCsrf(request, response, next) {
     return;
   }
 
-  const cookieToken = String(request.cookies?.stage2_csrf ?? "");
   const headerToken = String(request.headers["x-csrf-token"] ?? "");
 
-  if (!cookieToken || !headerToken || !safeEqual(cookieToken, headerToken)) {
+  if (!headerToken || !isValidCsrfToken(headerToken)) {
     response.status(403).json({ error: "Security token is invalid or expired." });
     return;
   }

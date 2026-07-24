@@ -1,4 +1,4 @@
-const CACHE_NAME = "stage2-v1";
+const CACHE_NAME = "stage2-v2";
 const OFFLINE_URLS = ["/stage2", "/manifest.json", "/hero-pattern.svg", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -18,13 +18,24 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  const request = event.request;
+
+  if (request.method !== "GET") {
+    return;
+  }
+
+  const requestUrl = new URL(request.url);
+  if (requestUrl.origin !== self.location.origin || requestUrl.pathname.startsWith("/api/")) {
+    return;
+  }
+
+  if (request.mode !== "navigate") {
     return;
   }
 
   event.respondWith(
-    fetch(event.request).catch(() =>
-      caches.match(event.request).then((cached) => cached || caches.match("/stage2"))
+    fetch(request).catch(() =>
+      caches.match(request).then((cached) => cached || caches.match("/stage2"))
     )
   );
 });

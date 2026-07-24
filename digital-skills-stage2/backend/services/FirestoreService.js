@@ -1,5 +1,5 @@
 const { FieldValue, Timestamp } = require("firebase-admin/firestore");
-const { db } = require("../config/firebase");
+const { getDb } = require("../config/firebase");
 const { AppError } = require("../middleware/errorHandler");
 const { buildPaymentReference, buildReceiptNumber } = require("../utils/receipt");
 
@@ -9,12 +9,16 @@ const STAGE = "Stage2";
 const UNDER_REVIEW = "UnderReview";
 
 class FirestoreService {
+  get db() {
+    return getDb();
+  }
+
   applicantsCollection() {
-    return db.collection("Applicants");
+    return this.db.collection("Applicants");
   }
 
   paymentsCollection() {
-    return db.collection("Payments");
+    return this.db.collection("Payments");
   }
 
   async createApplicant(payload, metadata) {
@@ -23,7 +27,7 @@ class FirestoreService {
     const paymentReference = buildPaymentReference(applicantId);
     const paymentRef = this.paymentsCollection().doc(paymentReference);
 
-    await db.runTransaction(async (transaction) => {
+    await this.db.runTransaction(async (transaction) => {
       const existing = await transaction.get(applicantRef);
       if (existing.exists) {
         throw new AppError(409, "This Applicant ID has already completed Stage 2.");
@@ -56,7 +60,7 @@ class FirestoreService {
         updatedAt: FieldValue.serverTimestamp()
       });
 
-      transaction.create(db.collection("StageHistory").doc(), {
+      transaction.create(this.db.collection("StageHistory").doc(), {
         applicantId,
         fromStage: "Stage1",
         toStage: STAGE,
@@ -64,7 +68,7 @@ class FirestoreService {
         createdAt: FieldValue.serverTimestamp()
       });
 
-      transaction.create(db.collection("AuditLogs").doc(), {
+      transaction.create(this.db.collection("AuditLogs").doc(), {
         action: "stage2_application_created",
         applicantId,
         ipAddress: metadata.ipAddress,
@@ -159,7 +163,7 @@ class FirestoreService {
     const applicantRef = this.applicantsCollection().doc(applicantId);
     const paymentRef = this.paymentsCollection().doc(reference);
 
-    await db.runTransaction(async (firestoreTransaction) => {
+    await this.db.runTransaction(async (firestoreTransaction) => {
       const applicantSnapshot = await firestoreTransaction.get(applicantRef);
       if (!applicantSnapshot.exists) {
         throw new AppError(404, "Applicant was not found.");
@@ -193,7 +197,7 @@ class FirestoreService {
         verifiedBy: source
       });
 
-      firestoreTransaction.create(db.collection("StageHistory").doc(), {
+      firestoreTransaction.create(this.db.collection("StageHistory").doc(), {
         applicantId,
         fromStage: STAGE,
         toStage: STAGE,
@@ -201,7 +205,7 @@ class FirestoreService {
         createdAt: FieldValue.serverTimestamp()
       });
 
-      firestoreTransaction.create(db.collection("AuditLogs").doc(), {
+      firestoreTransaction.create(this.db.collection("AuditLogs").doc(), {
         action: "stage2_payment_verified",
         applicantId,
         paymentReference: reference,
@@ -222,7 +226,7 @@ class FirestoreService {
   }
 
   async logEmail(event) {
-    await db.collection("EmailLogs").add({
+    await this.db.collection("EmailLogs").add({
       ...event,
       createdAt: FieldValue.serverTimestamp()
     });
