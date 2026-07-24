@@ -28,7 +28,13 @@ function getIpAddress(request) {
 }
 
 function normalizePrivateKey(key) {
-  return String(key ?? "").replace(/\\n/g, "\n");
+  return String(key ?? "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .trim();
 }
 
 function getAllowedOrigins() {

@@ -32,12 +32,27 @@ In Firebase Console:
 1. Open Project Settings.
 2. Open Service Accounts.
 3. Generate a new private key.
-4. Copy values into Render environment variables:
+4. Prefer the base64 method for Render because it avoids private-key line break errors.
+
+PowerShell base64 command:
+
+```powershell
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Content .\firebase-service-account.json -Raw)))
+```
+
+Add the result to Render:
+
+- `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`
+
+If you use the direct key variables instead, Render can accept either real line breaks or escaped `\n` sequences, and the backend now strips surrounding quotes automatically.
+
+Alternative manual values:
+
    - `FIREBASE_PROJECT_ID`
    - `FIREBASE_CLIENT_EMAIL`
    - `FIREBASE_PRIVATE_KEY`
 
-Keep the private key line breaks as `\n` when pasting into Render.
+Keep the private key line breaks as `\n` when pasting into Render, or paste the key as-is with actual line breaks.
 
 ## Environment Variables
 
