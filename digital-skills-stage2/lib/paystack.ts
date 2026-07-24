@@ -1,8 +1,15 @@
 import type { CreateApplicantResponse } from "./application";
 
-type PaystackCallback = (response: { reference: string; trans?: string }) => void;
+type PaystackSuccessCallback = (response: {
+  reference: string;
+  trans?: string;
+  status?: string;
+  message?: string;
+  transaction?: string;
+  trxref?: string;
+}) => void;
 
-type PaystackPopupConfig = {
+type PaystackCheckoutConfig = {
   key: string;
   email: string;
   amount: number;
@@ -15,15 +22,15 @@ type PaystackPopupConfig = {
       value: string;
     }>;
   };
-  callback: PaystackCallback;
-  onClose: () => void;
+  onSuccess: PaystackSuccessCallback;
+  onCancel: () => void;
 };
 
 declare global {
   interface Window {
     PaystackPop?: {
-      setup(config: PaystackPopupConfig): {
-        openIframe(): void;
+      new (): {
+        checkout(config: PaystackCheckoutConfig): Promise<void>;
       };
     };
   }
@@ -49,7 +56,7 @@ export function loadPaystack(): Promise<void> {
 
     const script = document.createElement("script");
     script.id = scriptId;
-    script.src = "https://js.paystack.co/v1/inline.js";
+    script.src = "https://js.paystack.co/v2/inline.js";
     script.async = true;
     script.onload = () => resolve();
     script.onerror = () => reject(new Error("Paystack failed to load"));
@@ -59,7 +66,7 @@ export function loadPaystack(): Promise<void> {
 
 export async function openPaystackCheckout(
   payment: CreateApplicantResponse,
-  onSuccess: PaystackCallback,
+  onSuccess: PaystackSuccessCallback,
   onClose: () => void
 ): Promise<void> {
   const publicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
@@ -69,7 +76,14 @@ export async function openPaystackCheckout(
 
   await loadPaystack();
 
-  const popup = window.PaystackPop?.setup({
+  const PaystackPopConstructor = window.PaystackPop;
+  if (!PaystackPopConstructor) {
+    throw new Error("Paystack checkout is unavailable");
+  }
+
+  const popup = new PaystackPopConstructor();
+
+  await popup.checkout({
     key: publicKey,
     email: payment.email,
     amount: payment.amount,
@@ -84,14 +98,7 @@ export async function openPaystackCheckout(
         }
       ]
     },
-    callback: onSuccess,
-    onClose
+    onSuccess,
+    onCancel: onClose
   });
-
-  if (!popup) {
-    throw new Error("Paystack checkout is unavailable");
-  }
-
-  popup.openIframe();
 }
-
