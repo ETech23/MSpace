@@ -28,13 +28,34 @@ function getIpAddress(request) {
 }
 
 function normalizePrivateKey(key) {
-  return String(key ?? "")
+  const normalized = String(key ?? "")
     .trim()
+    .replace(/^\uFEFF/, "")
     .replace(/^['"]|['"]$/g, "")
     .replace(/\\r\\n/g, "\n")
     .replace(/\\n/g, "\n")
     .replace(/\r\n/g, "\n")
     .trim();
+
+  const pemMatch = normalized.match(
+    /-----BEGIN ([A-Z ]+?)-----\s*([\s\S]*?)\s*-----END \1-----/i
+  );
+
+  if (!pemMatch) {
+    return normalized;
+  }
+
+  const header = `-----BEGIN ${pemMatch[1].toUpperCase()}-----`;
+  const footer = `-----END ${pemMatch[1].toUpperCase()}-----`;
+  const body = pemMatch[2].replace(/\s+/g, "");
+
+  if (!body) {
+    return normalized;
+  }
+
+  const lines = body.match(/.{1,64}/g) || [];
+
+  return [header, ...lines, footer].join("\n");
 }
 
 function getAllowedOrigins() {

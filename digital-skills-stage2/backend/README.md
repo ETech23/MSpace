@@ -44,7 +44,7 @@ Add the result to Render:
 
 - `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`
 
-If you use the direct key variables instead, Render can accept either real line breaks or escaped `\n` sequences, and the backend now strips surrounding quotes automatically.
+If you use the direct key variables instead, Render can accept either real line breaks or escaped `\n` sequences, and the backend now strips surrounding quotes and repairs flattened PEM formatting automatically.
 
 Alternative manual values:
 

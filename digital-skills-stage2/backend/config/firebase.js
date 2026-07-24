@@ -1,27 +1,43 @@
 const admin = require("firebase-admin");
 const { normalizePrivateKey } = require("../utils/helpers");
 
-function getServiceAccount() {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64) {
-    const serviceAccount = JSON.parse(
-      Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64, "base64").toString("utf8")
-    );
-
-    if (serviceAccount.private_key) {
-      serviceAccount.private_key = normalizePrivateKey(serviceAccount.private_key);
-    }
-
+function normalizeServiceAccount(serviceAccount) {
+  if (!serviceAccount || typeof serviceAccount !== "object") {
     return serviceAccount;
   }
 
+  const normalizedServiceAccount = { ...serviceAccount };
+
+  if (normalizedServiceAccount.private_key) {
+    normalizedServiceAccount.private_key = normalizePrivateKey(normalizedServiceAccount.private_key);
+  }
+
+  if (normalizedServiceAccount.privateKey) {
+    normalizedServiceAccount.privateKey = normalizePrivateKey(normalizedServiceAccount.privateKey);
+  }
+
+  return normalizedServiceAccount;
+}
+
+function parseServiceAccountPayload(payload) {
+  const parsedPayload = JSON.parse(payload);
+
+  if (typeof parsedPayload === "string") {
+    return normalizeServiceAccount(JSON.parse(parsedPayload));
+  }
+
+  return normalizeServiceAccount(parsedPayload);
+}
+
+function getServiceAccount() {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64) {
+    return parseServiceAccountPayload(
+      Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64, "base64").toString("utf8")
+    );
+  }
+
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-
-    if (serviceAccount.private_key) {
-      serviceAccount.private_key = normalizePrivateKey(serviceAccount.private_key);
-    }
-
-    return serviceAccount;
+    return parseServiceAccountPayload(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
   }
 
   const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -46,10 +62,16 @@ function initializeFirebase() {
 
   const serviceAccount = getServiceAccount();
 
-  return admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: serviceAccount.projectId || serviceAccount.project_id
-  });
+  try {
+    return admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: serviceAccount.projectId || serviceAccount.project_id
+    });
+  } catch (error) {
+    throw new Error(
+      `Firebase Admin failed to initialize. Check FIREBASE_SERVICE_ACCOUNT_JSON_BASE64, FIREBASE_SERVICE_ACCOUNT_JSON, or FIREBASE_PRIVATE_KEY for a valid PEM private key. Original error: ${error.message}`
+    );
+  }
 }
 
 initializeFirebase();
