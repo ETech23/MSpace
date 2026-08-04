@@ -30,9 +30,9 @@ class GoogleSheetsService {
       currentOccupation: application.currentOccupation,
       highestQualification: application.highestQualification,
       referralSource: application.referralSource,
-      queueStatus: application.queueStatus,
-      failureReason: application.failureReason,
-      retryCount: application.retryCount,
+      queueStatus: "",
+      failureReason: "",
+      retryCount: 0,
       status: application.status,
       submittedAt
     };

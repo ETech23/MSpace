@@ -265,7 +265,7 @@ function buildStage1SpreadsheetRow(application) {
     .join("; ");
 
   return [
-    "",
+    application.applicantId ?? "",
     "",
     submittedAt,
     application.firstName ?? "",
@@ -301,14 +301,14 @@ function buildStage1SpreadsheetRow(application) {
     application.status ?? "Pending Review",
     "",
     "",
-    "Review",
+    "",
     notes,
     application.applicantId ?? "",
-    application.queueStatus ?? "Waiting",
-    application.lastEmailStage ?? "None",
+    "",
+    "",
     application.lastEmailDate ?? "",
-    application.failureReason ?? "",
-    Number.isInteger(application.retryCount) ? application.retryCount : 0,
+    "",
+    0,
     application.nextActionLink ?? ""
   ];
 }
