@@ -19,6 +19,8 @@ type Stage1Receipt = {
   lastName?: string;
 };
 
+const receiptKey = "stage1-application-receipt-v1";
+
 export function Stage1Success() {
   const searchParams = useSearchParams();
   const applicantId = searchParams.get("applicantId") ?? "";
@@ -30,11 +32,41 @@ function Stage1SuccessView({ applicantId }: { applicantId: string }) {
   const [application, setApplication] = useState<Stage1Receipt | null>(null);
 
   useEffect(() => {
-    const stored = window.sessionStorage.getItem("stage1-application");
+    const stored = window.sessionStorage.getItem(receiptKey) ?? window.sessionStorage.getItem("stage1-application");
 
     if (stored) {
       try {
-        setApplication(JSON.parse(stored) as Stage1Receipt);
+        const parsed = JSON.parse(stored) as Stage1Receipt;
+        setApplication(parsed);
+
+        const needsHydration = !parsed.email || !parsed.firstName || !parsed.lastName;
+        if (!needsHydration || !applicantId) {
+          return;
+        }
+
+        getStage1Application(applicantId)
+          .then((response) => {
+            const record = response as Record<string, unknown>;
+            setApplication((current) => ({
+              applicantId: String(record.applicantId ?? current?.applicantId ?? applicantId),
+              status: String(record.status ?? current?.status ?? "Pending Review"),
+              queueStatus: String(record.queueStatus ?? current?.queueStatus ?? "Waiting"),
+              nextActionLink: String(record.nextActionLink ?? current?.nextActionLink ?? "/apply"),
+              submittedAt: formatSubmittedAt(
+                record.submissionTime ?? record.submittedAt ?? current?.submittedAt
+              ),
+              email: String(
+                record.email ??
+                record.emailNormalized ??
+                current?.email ??
+                ""
+              ),
+              firstName: String(record.firstName ?? current?.firstName ?? ""),
+              lastName: String(record.lastName ?? current?.lastName ?? "")
+            }));
+          })
+          .catch(() => void 0);
+
         return;
       } catch {
         window.sessionStorage.removeItem("stage1-application");
@@ -54,7 +86,7 @@ function Stage1SuccessView({ applicantId }: { applicantId: string }) {
           queueStatus: String(record.queueStatus ?? "Waiting"),
           nextActionLink: String(record.nextActionLink ?? "/apply"),
           submittedAt: formatSubmittedAt(record.submissionTime ?? record.submittedAt),
-          email: String(record.email ?? ""),
+          email: String(record.email ?? record.emailNormalized ?? ""),
           firstName: String(record.firstName ?? ""),
           lastName: String(record.lastName ?? "")
         });

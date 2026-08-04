@@ -93,6 +93,9 @@ class Stage1Service {
       queueStatus,
       failureReason,
       retryCount,
+      email: application.email ?? email,
+      firstName: application.firstName ?? cleanPayload.firstName ?? "",
+      lastName: application.lastName ?? cleanPayload.lastName ?? "",
       nextActionLink: application.nextActionLink,
       status: application.status,
       submittedAt: application.submissionTime?.toDate

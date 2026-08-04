@@ -58,6 +58,9 @@ export type Stage1ApplicationResponse = {
   nextActionLink: string;
   status: string;
   submittedAt: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
 };
 
 export const initialStage1Form: Stage1Form = {

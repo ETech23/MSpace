@@ -30,6 +30,7 @@ import { ThemeToggle } from "./ThemeToggle";
 type SubmissionStatus = "idle" | "loading" | "submitting";
 
 const draftKey = "stage1-application-draft-v1";
+const receiptKey = "stage1-application-receipt-v1";
 
 const highlightCards: Array<{ label: string; value: string; Icon: LucideIcon }> = [
   { label: "Stage", value: "Stage 1 Application", Icon: ShieldCheck },
@@ -155,7 +156,15 @@ export function Stage1Application() {
     try {
       setStatus("submitting");
       const response = await createStage1Application(toStage1Payload(sanitizedForm), csrfToken);
-      window.sessionStorage.setItem("stage1-application", JSON.stringify(response));
+      const receipt = {
+        ...response,
+        email: sanitizedForm.email,
+        firstName: sanitizedForm.firstName,
+        lastName: sanitizedForm.lastName,
+        submittedAt: response.submittedAt
+      };
+      window.sessionStorage.setItem("stage1-application", JSON.stringify(receipt));
+      window.sessionStorage.setItem(receiptKey, JSON.stringify(receipt));
       window.localStorage.removeItem(draftKey);
       router.push(`/apply/success?applicantId=${encodeURIComponent(response.applicantId)}`);
     } catch (error) {
@@ -195,57 +204,59 @@ export function Stage1Application() {
         <ThemeToggle />
       </div>
 
-      <section className="grid gap-6 lg:grid-cols-[1fr_1.45fr]">
-        <motion.aside
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-panel rounded-3xl p-5 sm:p-6"
-          initial={{ opacity: 0, y: 14 }}
-        >
-          <div className="rounded-2xl border border-emerald-900/10 bg-white/75 p-5 dark:border-white/10 dark:bg-white/10">
-            <p className="text-xs font-bold uppercase tracking-[0.3em] text-brand-green dark:text-brand-gold">
-              Information notice
-            </p>
-            <ul className="mt-4 space-y-3 text-sm leading-6 text-emerald-950/80 dark:text-white/75">
-              <NoticeItem text="Carefully complete all sections." />
-              <NoticeItem text="Only shortlisted applicants will proceed to Stage 2." />
-              <NoticeItem text="Please provide accurate and verifiable information." />
-            </ul>
-          </div>
+      <section className={`grid gap-6 ${currentStep === 0 ? "lg:grid-cols-[1fr_1.45fr]" : "lg:grid-cols-1"}`}>
+        {currentStep === 0 ? (
+          <motion.aside
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-panel rounded-3xl p-5 sm:p-6"
+            initial={{ opacity: 0, y: 14 }}
+          >
+            <div className="rounded-2xl border border-emerald-900/10 bg-white/75 p-5 dark:border-white/10 dark:bg-white/10">
+              <p className="text-xs font-bold uppercase tracking-[0.3em] text-brand-green dark:text-brand-gold">
+                Information notice
+              </p>
+              <ul className="mt-4 space-y-3 text-sm leading-6 text-emerald-950/80 dark:text-white/75">
+                <NoticeItem text="Carefully complete all sections." />
+                <NoticeItem text="Only shortlisted applicants will proceed to Stage 2." />
+                <NoticeItem text="Please provide accurate and verifiable information." />
+              </ul>
+            </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-            {highlightCards.map(({ label, value, Icon }) => (
-              <motion.div
-                animate={{ opacity: 1, x: 0 }}
-                className="rounded-2xl border border-emerald-900/10 bg-white/75 p-4 dark:border-white/10 dark:bg-white/10"
-                key={label}
-                initial={{ opacity: 0, x: -10 }}
-                transition={{ duration: 0.25 }}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex size-10 items-center justify-center rounded-xl bg-brand-green/10 text-brand-green dark:bg-white/10 dark:text-brand-gold">
-                    <Icon size={18} />
-                  </span>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-emerald-950/50 dark:text-white/50">
-                      {label}
-                    </p>
-                    <p className="mt-1 text-sm font-black text-brand-ink dark:text-white">
-                      {value}
-                    </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+              {highlightCards.map(({ label, value, Icon }) => (
+                <motion.div
+                  animate={{ opacity: 1, x: 0 }}
+                  className="rounded-2xl border border-emerald-900/10 bg-white/75 p-4 dark:border-white/10 dark:bg-white/10"
+                  key={label}
+                  initial={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex size-10 items-center justify-center rounded-xl bg-brand-green/10 text-brand-green dark:bg-white/10 dark:text-brand-gold">
+                      <Icon size={18} />
+                    </span>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-emerald-950/50 dark:text-white/50">
+                        {label}
+                      </p>
+                      <p className="mt-1 text-sm font-black text-brand-ink dark:text-white">
+                        {value}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                </motion.div>
+              ))}
+            </div>
 
-          <div className="mt-5 rounded-2xl border border-brand-gold/30 bg-brand-gold/10 p-5 text-sm text-brand-ink dark:text-brand-gold">
-            <p className="font-black uppercase tracking-wide">Autosave enabled</p>
-            <p className="mt-2 leading-6">
-              Your progress is saved locally in this browser while you complete the
-              application.
-            </p>
-          </div>
-        </motion.aside>
+            <div className="mt-5 rounded-2xl border border-brand-gold/30 bg-brand-gold/10 p-5 text-sm text-brand-ink dark:text-brand-gold">
+              <p className="font-black uppercase tracking-wide">Autosave enabled</p>
+              <p className="mt-2 leading-6">
+                Your progress is saved locally in this browser while you complete the
+                application.
+              </p>
+            </div>
+          </motion.aside>
+        ) : null}
 
         <motion.section
           animate={{ opacity: 1, y: 0 }}

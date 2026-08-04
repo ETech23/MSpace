@@ -1,5 +1,8 @@
 const { AppError } = require("../middleware/errorHandler");
-const { buildStage1SpreadsheetRow } = require("../utils/stage1");
+const {
+  STAGE1_SPREADSHEET_HEADERS,
+  buildStage1SpreadsheetRow
+} = require("../utils/stage1");
 
 class GoogleSheetsService {
   getWebhookUrl() {
@@ -8,6 +11,10 @@ class GoogleSheetsService {
       throw new AppError(500, "Google Sheets webhook is not configured.");
     }
     return webhookUrl;
+  }
+
+  getSheetName() {
+    return String(process.env.GOOGLE_SHEETS_TAB_NAME ?? "Stage 1 Applications").trim();
   }
 
   async appendStage1Application(application) {
@@ -37,7 +44,8 @@ class GoogleSheetsService {
       },
       body: JSON.stringify({
         event: "stage1_application_submitted",
-        sheetName: "Stage 1 Applications",
+        sheetName: this.getSheetName(),
+        spreadsheetHeaders: STAGE1_SPREADSHEET_HEADERS,
         applicantId: application.applicantId,
         submittedAt,
         row: buildStage1SpreadsheetRow(application),

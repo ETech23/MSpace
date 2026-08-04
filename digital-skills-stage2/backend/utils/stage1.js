@@ -6,6 +6,54 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_PATTERN = /^(\+234|234|0)([789][01]\d{8})$/;
 const URL_PATTERN = /^(https?:\/\/)[^\s/$.?#].[^\s]*$/i;
 
+const STAGE1_SPREADSHEET_HEADERS = [
+  "Submission ID",
+  "Respondent ID",
+  "Submitted at",
+  "First Name",
+  "Last Name",
+  "Phone Number (WhatsApp preferred)",
+  "Email Address",
+  "Date of birth",
+  "Gender",
+  "State of Residence",
+  "Current Occupation",
+  "Are you currently learning any digital skill?",
+  "Which digital skill are you learning or interested in?",
+  "How long have you been learning?",
+  "Facebook Profile link",
+  "Instagram Profile link",
+  "Tiktok Profile link",
+  "X (Twitter) Profile link",
+  "How many followers do you have in total across your social media accounts?",
+  "How many followers do you have in total across your social media accounts? (Under 100)",
+  "How many followers do you have in total across your social media accounts? (100–500)",
+  "How many followers do you have in total across your social media accounts? (501–1,000)",
+  "How many followers do you have in total across your social media accounts? (1,001–5,000)",
+  "How many followers do you have in total across your social media accounts? (5,001–10,000)",
+  "How many followers do you have in total across your social media accounts? (Above 10,000)",
+  "Do you currently own a laptop?",
+  "Do you have access to a computer elsewhere?",
+  "Are you willing to participate in follow-up activities if selected?",
+  "How did you share the application?",
+  "Paste one link showing you've shared the application .",
+  "Screenshot showing you've shared the application",
+  "I confirm that the information I have provided is true and accurate. I understand that submitting this application does not guarantee selection, and that applications found to contain false information may be disqualified.",
+  "I confirm that the information I have provided is true and accurate. I understand that submitting this application does not guarantee selection, and that applications found to contain false information may be disqualified. (I agree to the terms above.)",
+  "Status",
+  "Email Sent",
+  "Email Sent Date",
+  "Next Stage",
+  "Notes",
+  "Applicant ID",
+  "Queue Status",
+  "Last Email Stage",
+  "Last Email Date",
+  "Failure Reason",
+  "Retry Count",
+  "Next Action Link"
+];
+
 function buildStage1ApplicantId() {
   const randomNumber = crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
   return `DSP1-2026-${randomNumber}`;
@@ -197,49 +245,71 @@ function buildStage1FirestoreDocument(payload, metadata, applicantId) {
 }
 
 function buildStage1SpreadsheetRow(application) {
-  const socialLink = [
-    application.facebookProfile,
-    application.instagramProfile,
-    application.linkedInProfile,
-    application.xProfile,
-    application.tiktokProfile
-  ]
-    .filter(Boolean)
-    .join(" | ");
-
+  const submittedAt = application.submittedAt ?? new Date().toISOString();
+  const totalFollowers = Number(application.totalFollowers ?? 0);
   const notes = [
-    `Learning: ${application.startedLearning}`,
+    application.secondarySkill ? `Secondary skill: ${application.secondarySkill}` : "",
+    application.experienceLevel ? `Experience: ${application.experienceLevel}` : "",
     application.learningPlatform ? `Platform: ${application.learningPlatform}` : "",
-    application.ownsLaptop === "Yes" ? `Laptop: ${application.laptopCondition}` : ""
+    application.learningPlatformOther ? `Platform note: ${application.learningPlatformOther}` : "",
+    application.ownsLaptop === "Yes" && application.laptopCondition
+      ? `Laptop: ${application.laptopCondition}`
+      : "",
+    application.ram ? `RAM: ${application.ram}` : "",
+    application.storage ? `Storage: ${application.storage}` : "",
+    application.operatingSystem ? `OS: ${application.operatingSystem}` : "",
+    application.dailyDataBudget ? `Data budget: ${application.dailyDataBudget}` : "",
+    application.internetProvider ? `Internet provider: ${application.internetProvider}` : ""
   ]
     .filter(Boolean)
     .join("; ");
 
   return [
-    new Date().toISOString(),
-    application.firstName,
-    application.lastName,
-    application.email,
-    application.phone,
-    application.gender,
-    application.age,
-    application.state,
-    application.lga,
-    application.primarySkill,
-    application.currentOccupation,
-    application.highestQualification,
-    socialLink,
-    application.totalFollowers,
-    application.referralSource,
-    application.status,
+    "",
+    "",
+    submittedAt,
+    application.firstName ?? "",
+    application.lastName ?? "",
+    application.phone ?? "",
+    application.email ?? "",
+    "",
+    application.gender ?? "",
+    application.state ?? "",
+    application.currentOccupation ?? "",
+    application.startedLearning ?? "",
+    application.primarySkill ?? "",
+    application.experienceLevel ?? "",
+    application.facebookProfile ?? "",
+    application.instagramProfile ?? "",
+    application.tiktokProfile ?? "",
+    application.xProfile ?? "",
+    totalFollowers,
+    totalFollowers > 0 && totalFollowers < 100,
+    totalFollowers >= 100 && totalFollowers <= 500,
+    totalFollowers >= 501 && totalFollowers <= 1000,
+    totalFollowers >= 1001 && totalFollowers <= 5000,
+    totalFollowers >= 5001 && totalFollowers <= 10000,
+    totalFollowers > 10000,
+    application.ownsLaptop ?? "",
+    "",
+    application.consentToContact ? "Yes" : "",
+    application.referralSource ?? "",
+    application.referralCode ?? "",
+    "",
+    application.accurateInformation ? true : false,
+    application.understandNotGuarantee ? true : false,
+    application.status ?? "Pending Review",
+    "",
+    "",
+    "Review",
     notes,
-    application.applicantId,
-    application.queueStatus,
-    application.lastEmailStage,
+    application.applicantId ?? "",
+    application.queueStatus ?? "Waiting",
+    application.lastEmailStage ?? "None",
     application.lastEmailDate ?? "",
     application.failureReason ?? "",
-    application.retryCount,
-    application.nextActionLink
+    Number.isInteger(application.retryCount) ? application.retryCount : 0,
+    application.nextActionLink ?? ""
   ];
 }
 
@@ -259,6 +329,7 @@ function wordCount(value) {
 
 module.exports = {
   STAGE1_APP_ID_PATTERN,
+  STAGE1_SPREADSHEET_HEADERS,
   buildStage1ApplicantId,
   buildStage1FirestoreDocument,
   buildStage1SpreadsheetRow,
