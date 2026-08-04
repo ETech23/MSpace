@@ -111,6 +111,7 @@ export function AdminDashboard() {
       const params = new URLSearchParams(query);
       params.set("format", format);
       const file = await exportApplicants(adminKey, params);
+      const stageName = params.get("stage")?.toLowerCase() ?? "digital-skills";
       const type =
         format === "csv"
           ? "text/csv;charset=utf-8"
@@ -120,7 +121,7 @@ export function AdminDashboard() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `stage2-applicants.${extension}`;
+      anchor.download = `${stageName}-applicants.${extension}`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -137,7 +138,7 @@ export function AdminDashboard() {
             Admin
           </p>
           <h1 className="mt-3 text-3xl font-black text-brand-ink dark:text-white">
-            Stage 2 dashboard
+            Digital Skills dashboard
           </h1>
         </div>
         <ThemeToggle />
@@ -184,7 +185,7 @@ export function AdminDashboard() {
         <FilterSelect
           label="Stage"
           onChange={(value) => setFilters((current) => ({ ...current, stage: value }))}
-          options={["Stage2"]}
+          options={["Stage1", "Stage2"]}
           value={filters.stage}
         />
         <button

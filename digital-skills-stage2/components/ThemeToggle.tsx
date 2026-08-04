@@ -8,8 +8,7 @@ export function ThemeToggle() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("stage2-theme");
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const enabled = stored ? stored === "dark" : prefersDark;
+    const enabled = stored === "dark";
     setDarkMode(enabled);
     document.documentElement.classList.toggle("dark", enabled);
   }, []);

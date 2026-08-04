@@ -8,6 +8,10 @@ import type {
   CreateApplicantResponse,
   PaymentReceipt
 } from "./application";
+import type {
+  Stage1ApplicationResponse,
+  Stage1Payload
+} from "./stage1";
 
 const baseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
@@ -134,4 +138,22 @@ export function exportApplicants(
     {},
     { adminKey, responseType: "text" }
   );
+}
+
+export function createStage1Application(
+  payload: Stage1Payload,
+  csrfToken: string
+): Promise<Stage1ApplicationResponse> {
+  return apiRequest<Stage1ApplicationResponse>(
+    "/api/stage1/applications",
+    {
+      method: "POST",
+      data: payload
+    },
+    { csrfToken }
+  );
+}
+
+export function getStage1Application(applicantId: string): Promise<unknown> {
+  return apiRequest(`/api/stage1/applications/${encodeURIComponent(applicantId)}`);
 }

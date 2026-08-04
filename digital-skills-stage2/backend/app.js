@@ -8,6 +8,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const applicantRoutes = require("./routes/applicants");
 const paymentRoutes = require("./routes/payments");
+const stage1Routes = require("./routes/stage1");
 const webhookRoutes = require("./routes/webhooks");
 const adminRoutes = require("./routes/admin");
 const emailRoutes = require("./routes/emails");
@@ -73,6 +74,7 @@ app.get("/health", (_request, response) => {
 
 app.get("/api/csrf", issueCsrfToken);
 app.use(requireCsrf);
+app.use("/api/stage1/applications", stage1Routes);
 app.use("/api/applicants", applicantRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api", webhookRoutes);

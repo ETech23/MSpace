@@ -74,16 +74,27 @@ class AdminController {
       const applicants = await FirestoreService.listApplicants(request.query);
       const rows = applicants.map(toApplicantRow);
       const format = String(request.query.format ?? "csv");
+      const stageName = String(request.query.stage ?? "all").toLowerCase() === "stage1"
+        ? "stage1"
+        : String(request.query.stage ?? "all").toLowerCase() === "stage2"
+          ? "stage2"
+          : "digital-skills";
 
       if (format === "excel") {
         response.setHeader("Content-Type", "application/vnd.ms-excel; charset=utf-8");
-        response.setHeader("Content-Disposition", "attachment; filename=stage2-applicants.xls");
+        response.setHeader(
+          "Content-Disposition",
+          `attachment; filename=${stageName}-applicants.xls`
+        );
         response.status(200).send(toExcelHtml(rows));
         return;
       }
 
       response.setHeader("Content-Type", "text/csv; charset=utf-8");
-      response.setHeader("Content-Disposition", "attachment; filename=stage2-applicants.csv");
+      response.setHeader(
+        "Content-Disposition",
+        `attachment; filename=${stageName}-applicants.csv`
+      );
       response.status(200).send(toCsv(rows));
     } catch (error) {
       next(error);
@@ -98,7 +109,9 @@ function toApplicantRow(applicant) {
     email: String(applicant.email ?? ""),
     phone: String(applicant.phone ?? ""),
     state: String(applicant.state ?? ""),
-    preferredDigitalSkill: String(applicant.preferredDigitalSkill ?? ""),
+    preferredDigitalSkill: String(
+      applicant.preferredDigitalSkill ?? applicant.primarySkill ?? ""
+    ),
     paymentStatus: String(applicant.paymentStatus ?? ""),
     stage: String(applicant.stage ?? ""),
     verificationStatus: String(applicant.verificationStatus ?? ""),
@@ -108,7 +121,11 @@ function toApplicantRow(applicant) {
 
 function countBy(items, field) {
   return items.reduce((accumulator, item) => {
-    const key = String(item[field] ?? "Unknown");
+    const key = String(
+      field === "preferredDigitalSkill"
+        ? item.preferredDigitalSkill ?? item.primarySkill ?? "Unknown"
+        : item[field] ?? "Unknown"
+    );
     accumulator[key] = (accumulator[key] ?? 0) + 1;
     return accumulator;
   }, {});

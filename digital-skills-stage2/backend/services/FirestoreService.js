@@ -21,6 +21,33 @@ class FirestoreService {
     return this.db.collection("Payments");
   }
 
+  async findApplicantByEmail(email) {
+    const normalizedEmail = String(email ?? "").trim().toLowerCase();
+    if (!normalizedEmail) {
+      return null;
+    }
+
+    const normalizedSnapshot = await this.applicantsCollection()
+      .where("emailNormalized", "==", normalizedEmail)
+      .limit(1)
+      .get();
+
+    if (!normalizedSnapshot.empty) {
+      return { id: normalizedSnapshot.docs[0].id, ...normalizedSnapshot.docs[0].data() };
+    }
+
+    const fallbackSnapshot = await this.applicantsCollection()
+      .where("email", "==", normalizedEmail)
+      .limit(1)
+      .get();
+
+    if (!fallbackSnapshot.empty) {
+      return { id: fallbackSnapshot.docs[0].id, ...fallbackSnapshot.docs[0].data() };
+    }
+
+    return null;
+  }
+
   async createApplicant(payload, metadata) {
     const applicantId = payload.applicantId.toUpperCase();
     const applicantRef = this.applicantsCollection().doc(applicantId);
@@ -39,6 +66,7 @@ class FirestoreService {
         ...payload,
         applicantId,
         email: payload.email.toLowerCase(),
+        emailNormalized: payload.email.toLowerCase(),
         age: Number(payload.age),
         socialFollowers: Number(payload.socialFollowers),
         submissionTime: FieldValue.serverTimestamp(),
