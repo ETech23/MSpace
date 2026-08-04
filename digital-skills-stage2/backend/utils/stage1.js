@@ -1,7 +1,7 @@
 const crypto = require("node:crypto");
 const { FieldValue } = require("firebase-admin/firestore");
 
-const STAGE1_APP_ID_PATTERN = /^DSP1-2026-\d{6}$/i;
+const STAGE1_APP_ID_PATTERN = /^DSP-2026-\d{6}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_PATTERN = /^(\+234|234|0)([789][01]\d{8})$/;
 const URL_PATTERN = /^(https?:\/\/)[^\s/$.?#].[^\s]*$/i;
@@ -56,7 +56,7 @@ const STAGE1_SPREADSHEET_HEADERS = [
 
 function buildStage1ApplicantId() {
   const randomNumber = crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
-  return `DSP1-2026-${randomNumber}`;
+  return `DSP-2026-${randomNumber}`;
 }
 
 function normalizeEmail(value) {
