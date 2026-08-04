@@ -12,6 +12,11 @@ const { FirestoreService } = require("./FirestoreService");
 const GoogleSheetsService = require("./GoogleSheetsService");
 
 class Stage1Service {
+  allowDuplicateEmails() {
+    const value = String(process.env.STAGE1_ALLOW_DUPLICATE_EMAILS ?? "").trim().toLowerCase();
+    return value === "1" || value === "true" || value === "yes" || value === "on";
+  }
+
   async createApplication(payload, request) {
     const cleanPayload = sanitizeStage1Payload(payload);
     const validationError = validateStage1ApplicationPayload(cleanPayload);
@@ -21,10 +26,12 @@ class Stage1Service {
     }
 
     const email = normalizeEmail(cleanPayload.email);
-    const existing = await FirestoreService.findApplicantByEmail(email);
+    if (!this.allowDuplicateEmails()) {
+      const existing = await FirestoreService.findApplicantByEmail(email);
 
-    if (existing) {
-      throw new AppError(409, "This email has already been used to submit an application.");
+      if (existing) {
+        throw new AppError(409, "This email has already been used to submit an application.");
+      }
     }
 
     const applicantId = buildStage1ApplicantId();
